@@ -203,6 +203,8 @@ const cnText = await page.evaluate(() => document.querySelector('.text-layer')?.
 check('中文 PDF 文本层无乱码', cnText.includes('电子书阅读器'), JSON.stringify(cnText.slice(0, 30)))
 check('中文标点正确', cnText.includes('《测试》'), JSON.stringify(cnText.slice(0, 60)))
 check('文本层不含替换符', !/[\uFFFD]/.test(cnText), cnText.slice(0, 30))
+// 字体兼容模式只对「内嵌字体映射坏了」的文件生效，正常文件不能误判
+check('正常 PDF 不误判为字体兼容模式', (await page.locator('.compat-hint').count()) === 0)
 
 console.log('\n[6c] PDF 翻页控件')
 await backToShelf()

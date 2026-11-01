@@ -168,6 +168,7 @@ const zhCN: Dict = {
 
   'pdf.pageFailed': '这一页渲染失败：{reason}',
   'pdf.loadFailed': '无法打开这个 PDF：{reason}',
+  'pdf.compatHint': '这份 PDF 的内嵌字体无法正确映射，已改用系统字体显示：文字与位置是对的，字形会与原文略有差异。',
   'backup.title': '备份与同步',
   'backup.local': '本地备份',
   'backup.localDesc': '导出书单、阅读进度与全部笔记；可勾选一并打包书籍文件。',
@@ -359,6 +360,7 @@ const en: Dict = {
 
   'pdf.pageFailed': 'This page failed to render: {reason}',
   'pdf.loadFailed': 'Cannot open this PDF: {reason}',
+  'pdf.compatHint': 'This PDF has embedded fonts that could not be mapped correctly, so system fonts are used instead. Text and layout are correct; the typeface differs slightly.',
   'backup.title': 'Backup & sync',
   'backup.local': 'Local backup',
   'backup.localDesc': 'Export library, progress and notes. Optionally include book files.',

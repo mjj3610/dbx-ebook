@@ -145,11 +145,14 @@ function isGenericName(name: string): boolean {
  * 注意：一旦传入自定义 CMapReaderFactory / StandardFontDataFactory，
  * pdf.js 内部 useWorkerFetch 自动变为 false，改由主线程用上述工厂取数据，
  * 因此必须提供非空的 cMapUrl（否则 BaseCMapReaderFactory 构造时会报错）。
+ *
+ * compat=true 时先抹掉内嵌字体程序（见 stripEmbeddedFontPrograms）。
  */
-export async function openPdfDocument(data: ArrayBuffer): Promise<PdfDocument> {
-  // pdf.js 会把数据转移到 Worker，这里先复制，保证调用方持有的原始缓冲仍然有效
+export async function openPdfDocument(data: ArrayBuffer, options: { compat?: boolean } = {}): Promise<PdfDocument> {
+  const bytes = options.compat ? stripEmbeddedFontPrograms(new Uint8Array(data)) : new Uint8Array(data)
+  // pdf.js 会把数据转移到 Worker，这里保证调用方持有的原始缓冲仍然有效
   const task = pdfjsLib.getDocument({
-    data: new Uint8Array(data.slice(0)),
+    data: bytes.slice(0),
     // 保持字体渲染（CID 字体要靠 FontFace 才能真正画出字形）
     disableFontFace: false,
     isEvalSupported: false,
@@ -160,6 +163,127 @@ export async function openPdfDocument(data: ArrayBuffer): Promise<PdfDocument> {
     StandardFontDataFactory: InlineStandardFontDataFactory,
   })
   return task.promise
+}
+
+/* ------------------------------------------------------------------ *
+ * 字体兼容模式
+ *
+ * 有的中文 PDF（WPS / 福昕导出常见）把 CID 字体以「子集 + Identity
+ * CIDToGIDMap」形式嵌入，而 pdf.js 重建这份字体时打乱了字形索引：
+ * 重建后的 cmap 指向的字形与真实字形对不上，整页汉字会变成「每个字都
+ * 错成另一个固定的字」，数字与英文却正常（Chrome 自带内核不受影响，
+ * 所以同一份文件在 Edge 里是好的）。
+ *
+ * 这类文件没法从外部修正字形索引，但有一条可靠退路：把内嵌字体程序
+ * 从 PDF 里「摘掉」，pdf.js 就会改用 ToUnicode 拿到真实 Unicode 字符、
+ * 交给系统字体绘制 —— 字都对、位置对，只是字形变成系统字体。
+ *
+ * 摘除方式是等长改名（/FontFile2 → /ZontFile2），字节长度不变，
+ * 交叉引用表偏移量因此仍然有效，PDF 依旧能被正常解析。
+ * ------------------------------------------------------------------ */
+
+/** 需要改名的字体程序键；长键在前，避免 /FontFile 抢先匹配 /FontFile2 */
+const FONT_PROGRAM_KEYS: Array<[string, string]> = [
+  ['/FontFile2', '/ZontFile2'],
+  ['/FontFile3', '/ZontFile3'],
+  ['/FontFile', '/ZontFile'],
+]
+
+const isPdfWhitespace = (byte: number): boolean => byte === 0x20 || byte === 0x0a || byte === 0x0d || byte === 0x09
+
+/** 在字节数组里查 ASCII 子串 */
+function indexOfAscii(haystack: Uint8Array, needle: Uint8Array, from: number): number {
+  const last = haystack.length - needle.length
+  outer: for (let i = Math.max(0, from); i <= last; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) {
+      if (haystack[i + j] !== needle[j]) continue outer
+    }
+    return i
+  }
+  return -1
+}
+
+const asciiBytes = (text: string): Uint8Array => {
+  const out = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i += 1) out[i] = text.charCodeAt(i) & 0xff
+  return out
+}
+
+/**
+ * 抹掉内嵌字体程序：只改「/FontFile2 12 0 R」这种字典键，
+ * 且要求后面紧跟「数字 数字 R」，避免误伤二进制流里偶然出现的同样字节。
+ */
+export function stripEmbeddedFontPrograms(data: Uint8Array): Uint8Array {
+  const out = data.slice()
+  for (const [from, to] of FONT_PROGRAM_KEYS) {
+    const needle = asciiBytes(from)
+    const replacement = asciiBytes(to)
+    let index = indexOfAscii(out, needle, 0)
+    while (index !== -1) {
+      const after = index + needle.length
+      if (!isPdfWhitespace(out[after] ?? 0)) {
+        index = indexOfAscii(out, needle, after)
+        continue
+      }
+      let tail = ''
+      for (let i = after; i < Math.min(after + 24, out.length); i += 1) tail += String.fromCharCode(out[i])
+      if (!/^\s+\d+\s+\d+\s+R/.test(tail)) {
+        index = indexOfAscii(out, needle, after)
+        continue
+      }
+      out.set(replacement, index)
+      index = indexOfAscii(out, needle, index + replacement.length)
+    }
+  }
+  return out
+}
+
+/** pdf.js 把内嵌字体映射到私用区码位（BMP 0xE000-0xF8FF 或平面 16 0x100000+） */
+function isPrivateUseCode(code: number): boolean {
+  return (code >= 0xe000 && code <= 0xf8ff) || (code >= 0x100000 && code <= 0x10fffd)
+}
+
+/**
+ * 判断这份 PDF 是否存在「内嵌字体无法正确映射」的问题
+ *
+ * 判据：pdf.js 给内嵌字体分配的字形码应当落在私用区；一旦某个字形既不在
+ * 私用区、又与它自己的 Unicode 不一致，说明 pdf.js 没拿到映射、退回了原始
+ * CID —— 那个码位会被当成普通汉字画出来，于是「每字都错成另一个字」。
+ * 这类字形占比超过 10% 就认定需要兼容模式。
+ */
+export async function detectFontMappingIssue(doc: PdfDocument): Promise<boolean> {
+  try {
+    const page = await doc.getPage(1)
+    const ops = await page.getOperatorList()
+    let total = 0
+    let suspect = 0
+    for (let i = 0; i < ops.fnArray.length; i += 1) {
+      if (ops.fnArray[i] !== pdfjsLib.OPS.showText) continue
+      const glyphs = ops.argsArray[i][0] as Array<{ fontChar?: string; unicode?: string }>
+      for (const glyph of glyphs ?? []) {
+        if (!glyph?.fontChar) continue
+        const code = glyph.fontChar.codePointAt(0) ?? 0
+        total += 1
+        if (isPrivateUseCode(code)) continue
+        const unicode = glyph.unicode?.codePointAt(0) ?? null
+        if (unicode !== null && unicode !== code) suspect += 1
+      }
+    }
+    if (total < 8) return false
+    return suspect / total >= 0.1
+  } catch {
+    return false
+  }
+}
+
+/** 打开文档，遇到字体映射坏掉的文件自动切到兼容模式 */
+export async function openPdfWithAutoCompat(data: ArrayBuffer): Promise<{ doc: PdfDocument; compat: boolean }> {
+  const doc = await openPdfDocument(data)
+  if (!(await detectFontMappingIssue(doc))) return { doc, compat: false }
+  // 坏字体只能靠重开一次解决（字体翻译在 worker 里做，无法热替换）
+  doc.destroy().catch(() => undefined)
+  const patched = await openPdfDocument(data, { compat: true })
+  return { doc: patched, compat: true }
 }
 
 /** 递归展开 pdf 大纲 */
@@ -200,7 +324,9 @@ export async function parsePdf(file: File): Promise<BookDoc> {
   const data = await file.arrayBuffer()
   let doc: PdfDocument
   try {
-    doc = await openPdfDocument(data)
+    // 导入时就把封面渲染对：坏字体的 PDF 直接以兼容模式解析，
+    // 否则书架上会存下一张「名字全是错的」的封面图
+    doc = (await openPdfWithAutoCompat(data)).doc
   } catch (error) {
     // 加密 PDF 会抛 PasswordException，这里换成用户能照做的提示
     if ((error as { name?: string })?.name === 'PasswordException') {

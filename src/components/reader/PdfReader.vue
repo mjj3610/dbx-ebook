@@ -26,8 +26,14 @@
         </div>
       </div>
 
-      <!-- 整个文档打不开时的显式提示，避免只剩一片空白 -->
+      <!-- 整份文档打不开时的显式提示，避免只剩一片空白 -->
       <div v-if="docError" class="doc-error">{{ docError }}</div>
+    </div>
+
+    <!-- 内嵌字体映射坏了、自动改用系统字体时，告诉用户为什么字形不一样 -->
+    <div v-if="compatMode && !compatDismissed" class="compat-hint">
+      <span>{{ t('pdf.compatHint') }}</span>
+      <button class="compat-close" :aria-label="t('common.close')" @click="compatDismissed = true">×</button>
     </div>
 
     <!-- 翻页：分页模式下给出看得见的入口，滚动模式靠滚轮/触控板 -->
@@ -51,7 +57,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
-import { openPdfDocument } from '../../core/parsers/pdf'
+import { openPdfWithAutoCompat } from '../../core/parsers/pdf'
 import { wrapQuote, readSelection } from '../../core/render'
 import type { BookDoc, NoteRecord, ReaderSettings } from '../../core/types'
 import { t } from '../../i18n'
@@ -100,6 +106,9 @@ const pageTexts = ref<Map<number, string[]>>(new Map())
 const pageErrors = ref<Record<number, string>>({})
 /** 整个文档打不开时的原因 */
 const docError = ref('')
+/** 该文档的内嵌字体无法正确映射，已改用系统字体渲染 */
+const compatMode = ref(false)
+const compatDismissed = ref(false)
 
 let observer: IntersectionObserver | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -152,7 +161,9 @@ onMounted(async () => {
   }
   if (!props.doc.pdfData) return
   try {
-    const doc = await openPdfDocument(props.doc.pdfData)
+    const opened = await openPdfWithAutoCompat(props.doc.pdfData as ArrayBuffer)
+    const doc = opened.doc
+    compatMode.value = opened.compat
     pdfDoc.value = doc
     pageCount.value = doc.numPages
     currentPage.value = Math.min(props.initialPage, doc.numPages - 1)
@@ -622,6 +633,52 @@ defineExpose({ next, prev, goToPage, markSpeech, getParagraphs })
 
   .pager-next {
     right: 6px;
+  }
+}
+
+/* 字体兼容模式提示：一条细带，不挡正文，可关闭 */
+.compat-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92%, 720px);
+  padding: 7px 10px 7px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6b5320;
+  background: rgba(255, 247, 230, 0.97);
+  border: 1px solid rgba(196, 150, 46, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(20, 24, 32, 0.12);
+  z-index: 7;
+}
+
+.compat-close {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.compat-close:hover {
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  .compat-hint {
+    font-size: 11px;
+    padding: 6px 8px 6px 10px;
   }
 }
 
