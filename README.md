@@ -157,13 +157,13 @@ dbx-ebook/
 | --- | --- | --- |
 | `manifest_version` | `1` | 固定值，标识清单版本 |
 | `id` | `com.mjj3610.ebook` | 反向域名式唯一标识 |
-| `name` / `version` / `publisher` | `E-book Reader` / `1.2.3` / `mjj3610` | 基础元信息 |
+| `name` / `version` / `publisher` | `E-book Reader` / `1.2.5` / `mjj3610` | 基础元信息 |
 | `engines.host_api` | `1` | 声明使用的宿主 API 版本 |
 | `engines.dbx` | `>=0.5.68` | 兼容的 DBX 版本下限 |
 | `entrypoints.ui.root` | `ui` | 前端产物根目录 |
 | `entrypoints.ui.entry` | `ui/index.html` | 入口页，必须位于 `root` 内 |
 | `entrypoints.backend.executable` | `bin/backend` | 原生 Sidecar；打包时 CLI 自动改写为 `bin/<target>/backend.exe` |
-| `permissions` | `host.network:https://api.openai.com:443` 等 3 条 | 出网白名单，逐域名声明（上限 8 条） |
+| `permissions` | `[]`（空） | 插件页面**不发起**任何网络请求；翻译与 WebDAV 由原生 Sidecar 代发，域名由用户填写，无法预先枚举（详见 §7 网络一栏） |
 | `contributions` | `type: workbench` | 注册「电子书阅读器」工作台 |
 | `localizations` | `zh-CN` | 中文名称 / 描述，含 contribution 覆盖文案 |
 
@@ -232,7 +232,7 @@ checksums.json
 | 主题 | 宿主切换深浅色只更新 `html[data-dbx-theme]`，`dbxPlugin.theme.appearance` 仍是注入时的旧值 | 外观以 `data-dbx-theme` 为准，并用 `MutationObserver` 监听；CSS 同时匹配 `data-appearance` 与 `data-dbx-theme` |
 | 存储 | iframe 为**不透明来源**（`origin === 'null'`），`localStorage` 与 `indexedDB` 均抛 `SecurityError`；宿主桥接也**不提供**任何存储 API（只有 `backend.*` / `host.getContext` / `ui.readAsset`） | 三层后端：IndexedDB → **本地文件夹**（用户选目录，真落盘）→ 内存。沙箱中前两者不可用时自动用内存，并提示「本次会话有效」+ 存储位置入口 |
 | 目录选择 | `showDirectoryPicker` 存在但被 Chrome 拒绝：`Sandboxed documents aren't allowed to show a file picker` | 系统选择器仍标记为**沙箱限制**并解释原因；真正的「选择文件夹」改由 Sidecar 读盘（`storage/listDirs`）+ 插件自绘选择器实现，不依赖任何浏览器 API |
-| 网络 | `connect-src 'none'`，翻译 / WebDAV 的 `fetch` 在 dev 宿主中被拒 | 正式宿主按 `host.network` 白名单放行；本地验证请用 `vite preview` |
+| 网络 | `connect-src 'none'`：页面里 `fetch` **一律**被拒（实测 `Failed to fetch`，dev 宿主与正式宿主一致），`host.request('host.network')` 在 dev 宿主也未实现 | 把出网整体下移到原生 Sidecar：`net/request` 用用户身份直接联网，页面不再依赖 `host.network` 白名单，自建 OpenAI 兼容接口 / 自建 WebDAV 都能用；`file://` 等非 http(s) 协议被后端拒绝，响应体上限 16 MB |
 
 > 结论：`.dbxp` 能装、能开、能渲染、能读书（实测 `mounted: true`、界面中文、跟随宿主深浅色、导入 TXT 后可翻页阅读）。
 >
