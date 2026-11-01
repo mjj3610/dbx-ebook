@@ -121,7 +121,12 @@ await frame.getByRole('button', { name: '恢复默认' }).click()
 await page.waitForTimeout(3000)
 const afterReset = await frame.locator('#storage-root').inputValue()
 check('已恢复默认书库路径', !afterReset.endsWith(FOLDER), afterReset)
-if (existsSync(createdPath)) rmSync(createdPath, { recursive: true, force: true })
+// 清理是尽力而为：工作区里的 safe-delete 垫片偶尔会超时，不该因此让整轮回归判失败
+try {
+  if (existsSync(createdPath)) rmSync(createdPath, { recursive: true, force: true, maxRetries: 3 })
+} catch (err) {
+  console.log(`  （清理跳过：${err.message.split('\n')[0]}）`)
+}
 check('测试目录已清理', !existsSync(createdPath))
 
 await frame.getByRole('button', { name: '关闭' }).first().click().catch(() => undefined)

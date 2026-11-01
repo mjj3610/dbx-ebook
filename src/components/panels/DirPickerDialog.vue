@@ -46,7 +46,30 @@
                 <button class="icon-btn up" :disabled="!listing.parent || loading" :title="t('storage.pickerUp')" @click="go(listing.parent)">
                   <AppIcon name="arrowUp" :size="16" />
                 </button>
-                <span class="crumb" :title="listing.path">{{ listing.path || t('storage.pickerDrive') }}</span>
+                <!-- 地址栏：点击即变成可输入，粘贴 D:\xxx 直接跳转 -->
+                <input
+                  v-if="editing"
+                  ref="pathInput"
+                  v-model="pathDraft"
+                  class="path-input"
+                  spellcheck="false"
+                  :placeholder="t('storage.pickerPathPlaceholder')"
+                  @keydown.enter="jump"
+                  @keydown.esc="cancelEdit"
+                  @blur="cancelEdit"
+                />
+                <button v-else class="crumb" :title="t('storage.pickerPathEdit')" @click="startEdit">
+                  <span class="ellipsis">{{ listing.path || t('storage.pickerDrive') }}</span>
+                </button>
+                <button
+                  class="icon-btn"
+                  :disabled="!listing.path || loading"
+                  :title="t('storage.pickerReveal')"
+                  :aria-label="t('storage.pickerReveal')"
+                  @click="revealCurrent"
+                >
+                  <AppIcon name="external" :size="15" />
+                </button>
                 <button class="btn btn-ghost small" :disabled="!listing.path || loading" @click="toggleCreate">
                   <AppIcon name="plus" :size="14" />
                   {{ t('storage.pickerNew') }}
@@ -103,9 +126,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import AppIcon from '../ui/AppIcon.vue'
-import { listDirs, makeDir, type DirListing } from '../../core/sidecar'
+import { listDirs, makeDir, revealDir, type DirListing } from '../../core/sidecar'
 import { t } from '../../i18n'
 
 const props = defineProps<{
@@ -125,6 +148,9 @@ const loading = ref(false)
 const error = ref('')
 const creating = ref(false)
 const newName = ref('')
+const editing = ref(false)
+const pathDraft = ref('')
+const pathInput = ref<HTMLInputElement | null>(null)
 
 /** 快捷位置的显示名 */
 function shortcutLabel(key: string): string {
@@ -152,9 +178,48 @@ async function go(path: string): Promise<void> {
   }
 }
 
+/** 用系统资源管理器打开当前目录，方便用户在里面浏览、复制地址栏路径 */
+async function revealCurrent(): Promise<void> {
+  if (!listing.value.path) return
+  try {
+    await revealDir(listing.value.path)
+  } catch (err) {
+    emit('toast', err instanceof Error ? err.message : t('storage.pickerFailed'), 'error')
+  }
+}
+
 function toggleCreate(): void {
   creating.value = !creating.value
   newName.value = ''
+}
+
+/** 地址栏进入编辑态：预填当前路径，聚焦并全选，方便直接粘贴覆盖 */
+function startEdit(): void {
+  editing.value = true
+  pathDraft.value = listing.value.path
+  void nextTick(() => {
+    pathInput.value?.focus()
+    pathInput.value?.select()
+  })
+}
+
+function cancelEdit(): void {
+  editing.value = false
+  pathDraft.value = ''
+}
+
+/** 地址栏回车：直接跳到输入的绝对路径 */
+async function jump(): Promise<void> {
+  const target = pathDraft.value.trim()
+  editing.value = false
+  if (!target || target === listing.value.path) return
+  await go(target)
+  // go 失败时不会改动 listing，界面上仍停在原目录，这里只补一条提示
+  if (error.value) {
+    const message = error.value
+    error.value = ''
+    emit('toast', message, 'error')
+  }
 }
 
 /** 在当前目录下新建文件夹，并直接进入 */
@@ -220,8 +285,8 @@ onMounted(() => {
 }
 
 .picker {
-  width: min(680px, 94vw);
-  height: min(520px, 86vh);
+  width: min(720px, 96vw);
+  height: min(540px, 90vh);
   background: var(--c-panel);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-l);
@@ -253,7 +318,7 @@ onMounted(() => {
 }
 
 .side {
-  width: 176px;
+  width: 160px;
   flex: none;
   overflow-y: auto;
   padding: 10px 8px;
@@ -319,12 +384,39 @@ onMounted(() => {
 .crumb {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   color: var(--c-text-2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-s);
+  cursor: text;
+  text-align: left;
+}
+
+.crumb:hover {
+  border-color: var(--c-primary);
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--c-text);
+  background: var(--c-panel);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--radius-s);
+}
+
+.path-input:focus {
+  outline: none;
 }
 
 .create-row {
@@ -379,6 +471,8 @@ onMounted(() => {
 }
 
 .ellipsis {
+  /* 必须能占满剩余宽度：只写 min-width:0 时，窄面板里会被挤到只剩首字 */
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,5 +521,57 @@ onMounted(() => {
   height: 26px;
   padding: 0 10px;
   font-size: 12px;
+}
+
+/*
+ * 宿主侧边栏宽度有限（常见 380–520px），左右分栏会把目录名挤成只剩首字。
+ * 窄面板下改为上下布局：磁盘/快捷位置变成顶部的一排标签，列表占满整行。
+ */
+@media (max-width: 620px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .side {
+    width: auto;
+    max-height: 124px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px;
+    border-right: none;
+    border-bottom: 1px solid var(--c-border);
+  }
+
+  .group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .group + .group {
+    margin-top: 2px;
+  }
+
+  .group-title {
+    width: 100%;
+    padding: 2px 2px 0;
+  }
+
+  .side-item {
+    width: auto;
+    max-width: 46%;
+    padding: 4px 8px;
+  }
+
+  .entry {
+    padding: 8px 6px;
+  }
+
+  .foot .target {
+    display: none;
+  }
 }
 </style>
