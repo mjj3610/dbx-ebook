@@ -27,7 +27,18 @@ vite、@vitejs/plugin-vue、typescript、vue-tsc、@types/node、playwright-core
 
 - Apache-2.0 组件（PDF.js、DBX Go Plugin SDK）：保留其许可证与版权声明，本项目不对其主张额外限制。
 - MIT 组件（JSZip、Vue）：保留其版权与许可声明。
-- 上述组件的完整许可证文本可从各自上游仓库获取；如需随包分发完整文本，请在上架前补入 `licenses/` 目录。
+- 各组件许可证全文已随包分发，位于 `licenses/`，与组件对照关系见 `licenses/README.md`：
+
+  | 文件 | 内容 |
+  | --- | --- |
+  | `licenses/GPL-3.0.txt` | 本项目许可（同包根 `LICENSE`） |
+  | `licenses/Apache-2.0.txt` | Apache-2.0 规范全文 |
+  | `licenses/MIT.txt` | MIT 规范全文 |
+  | `licenses/pdfjs-Apache-2.0.txt` | PDF.js 上游许可原文（含 Mozilla 版权） |
+  | `licenses/foxit-standard-fonts.txt` | Foxit 标准字体数据原始授权 |
+  | `licenses/dbx-go-sdk-Apache-2.0.txt` | DBX Go Plugin SDK 声明与出处 |
+  | `licenses/jszip-MIT.txt` | JSZip 上游许可原文（MIT / GPLv3 双许可） |
+  | `licenses/vue-MIT.txt` | Vue 上游许可原文 |
 
 > 说明：GPL-3.0 与本项目所依赖的 Apache-2.0 / MIT 组件兼容；JSZip 采用「MIT 或 GPL-3.0-or-later」双许可，
 > 本项目按 GPL-3.0-or-later 一侧使用。

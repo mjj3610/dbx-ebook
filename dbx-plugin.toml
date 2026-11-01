@@ -10,7 +10,9 @@ directory = "backend"
 binary = "backend"
 
 [package]
-include = ["assets", "ui"]
+# LICENSE / THIRD-PARTY-NOTICES.md / licenses/ 必须随包分发：
+# GPL-3.0 §4/§6 与 Apache-2.0 §4(a) 要求二进制分发时附带许可副本。
+include = ["assets", "ui", "LICENSE", "THIRD-PARTY-NOTICES.md", "licenses"]
 
 [dev]
 # dbx-plugin dev 前自动构建 UI
