@@ -2,6 +2,7 @@
  * WebDAV 网盘备份：兼容坚果云、Nextcloud、群晖等标准 WebDAV 服务
  * 仅使用基础方法：MKCOL（建目录）、PUT（上传）、GET（下载）、PROPFIND（连通性检测）
  */
+import { netFetch } from './net'
 import { settings } from './settings'
 import { formatBytes } from './utils'
 
@@ -42,20 +43,21 @@ function fileUrl(): string {
   return `${base}/${encodeURIComponent(name)}`
 }
 
-/** 带超时请求 */
+/** 带超时请求（宿主沙箱里 fetch 被 CSP 挡住，统一走 netFetch 由后端代发） */
 async function request(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    return await fetch(url, { ...init, signal: controller.signal, headers: { ...authHeaders(), ...(init.headers ?? {}) } })
+    return await netFetch(url, {
+      method: init.method,
+      headers: { ...authHeaders(), ...((init.headers as Record<string, string>) ?? {}) },
+      body: init.body as BodyInit | undefined,
+      timeoutMs: REQUEST_TIMEOUT,
+    })
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    const message = error instanceof Error ? error.message : ''
+    if (/timeout|超时|deadline/i.test(message)) {
       throw new WebdavError('连接超时，请检查网盘地址与网络')
     }
-    // 浏览器跨域失败也走这里，给出可执行建议
-    throw new WebdavError('无法连接网盘：请确认地址正确，且服务端已允许跨域（CORS）访问')
-  } finally {
-    clearTimeout(timer)
+    throw new WebdavError(`无法连接网盘：${message || '请确认地址正确，且服务端已允许访问'}`)
   }
 }
 

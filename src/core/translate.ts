@@ -6,6 +6,7 @@
  * 结果按「目标语言 + 原文」缓存到内存与 IndexedDB，减少重复请求与费用
  */
 import { getCache, setCache } from './db'
+import { netFetch } from './net'
 import { settings } from './settings'
 
 /** 请求超时时间（毫秒） */
@@ -45,19 +46,21 @@ async function writeCache(key: string, value: string): Promise<void> {
   await setCache(key, value).catch(() => undefined)
 }
 
-/** 带超时的 fetch */
+/** 带超时的请求（宿主沙箱里 fetch 被 CSP 挡住，统一走 netFetch 由后端代发） */
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
+    return await netFetch(url, {
+      method: init.method,
+      headers: init.headers as Record<string, string> | undefined,
+      body: init.body as BodyInit | undefined,
+      timeoutMs: REQUEST_TIMEOUT,
+    })
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    const message = error instanceof Error ? error.message : ''
+    if (/timeout|超时|deadline/i.test(message)) {
       throw new TranslateError('翻译请求超时，请检查网络或接口地址')
     }
-    throw new TranslateError('翻译请求失败，请检查网络连接与接口地址')
-  } finally {
-    clearTimeout(timer)
+    throw new TranslateError(`翻译请求失败：${message || '请检查网络连接与接口地址'}`)
   }
 }
 

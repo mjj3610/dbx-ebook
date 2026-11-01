@@ -105,6 +105,37 @@ export function makeDir(parent: string, name: string): Promise<{ path: string }>
   return call<{ path: string }>('storage/mkdir', { parent, name }, 15000)
 }
 
+/** 用系统资源管理器打开目录（沙箱里拿不到系统选择框时的替代通路） */
+export function revealDir(path = ''): Promise<{ ok: boolean; path: string }> {
+  return call<{ ok: boolean; path: string }>('storage/reveal', path ? { path } : {}, 15000)
+}
+
+/** 后端代发 HTTP 请求的结果 */
+export interface NetResponse {
+  status: number
+  headers: Record<string, string>
+  /** base64 编码的响应体 */
+  body: string
+  url: string
+}
+
+/**
+ * 由后端代发 HTTP 请求
+ *
+ * 宿主下发的 CSP 是 connect-src 'none'，页面里的 fetch 发不出去，
+ * 翻译与 WebDAV 只能走后端（见 net.ts 的说明）。
+ */
+export function netRequest(params: {
+  url: string
+  method: string
+  headers: Record<string, string>
+  body: string
+  timeoutMs: number
+}): Promise<NetResponse> {
+  // 超时由后端自己的 http.Client 控制，这里的上限要多留一些余量
+  return call<NetResponse>('net/request', { ...params }, params.timeoutMs + 5000)
+}
+
 /** 读取书库索引原文 */
 export function readLibraryIndex(): Promise<{ exists: boolean; json: string; size: number }> {
   return call('library/read')

@@ -17,12 +17,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -35,7 +39,7 @@ import (
 
 const (
 	pluginID      = "com.mjj3610.ebook"
-	pluginVersion = "1.2.4"
+	pluginVersion = "1.2.5"
 	libraryFile   = "library.json"
 	booksDirName  = "books"
 	configFile    = "config.json"
@@ -177,6 +181,12 @@ func (a *app) Handle(
 	params json.RawMessage,
 	_ *dbxpluginsdk.Emitter,
 ) (any, *dbxpluginsdk.PluginError) {
+	// 网络转发不参与全局锁：一次翻译可能耗时几十秒，占着锁会把阅读器
+	// 所有的读写（book/read、library/write）全卡住。
+	if method == "net/request" {
+		return a.netRequest(params)
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -195,6 +205,9 @@ func (a *app) Handle(
 
 	case "storage/listDirs":
 		return a.listDirs(params)
+
+	case "storage/reveal":
+		return a.revealDir(params)
 
 	case "storage/mkdir":
 		return a.mkdir(params)
@@ -432,6 +445,126 @@ func (a *app) listDirs(params json.RawMessage) (any, *dbxpluginsdk.PluginError) 
 		"shortcuts": a.dirShortcuts(),
 		"writable":  isWritable(target),
 	}, nil
+}
+
+// netRequest 由后端代发 HTTP 请求
+//
+// 宿主给插件页面加的 CSP 是 connect-src 'none'（见 dev-runtime 的沙箱头），
+// 页面里 fetch 任何外部地址都会直接抛 "Failed to fetch"。翻译与 WebDAV 备份
+// 因此在真实宿主里必然失败，只能绕到后端：它以用户身份直接联网，不受 iframe
+// 的 CSP 限制，也就能支持用户自填的任意 OpenAI 兼容接口 / 自建 WebDAV。
+//
+// 只放行 http/https（挡掉 file: 之类的本地读取），响应体上限 16MB。
+const maxNetResponseBytes = 16 << 20
+
+func (a *app) netRequest(params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	var request struct {
+		URL       string            `json:"url"`
+		Method    string            `json:"method"`
+		Headers   map[string]string `json:"headers"`
+		Body      string            `json:"body"` // base64
+		TimeoutMs int               `json:"timeoutMs"`
+	}
+	if err := json.Unmarshal(params, &request); err != nil {
+		return nil, dbxpluginsdk.NewError(-32602, "参数格式错误")
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(request.URL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, dbxpluginsdk.NewError(-32602, "只支持 http/https 地址")
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(request.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	var body io.Reader
+	if request.Body != "" {
+		raw, decodeErr := base64.StdEncoding.DecodeString(request.Body)
+		if decodeErr != nil {
+			return nil, dbxpluginsdk.NewError(-32602, "请求体不是合法的 base64")
+		}
+		body = bytes.NewReader(raw)
+	}
+
+	timeout := time.Duration(request.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
+	req, err := http.NewRequest(method, parsed.String(), body)
+	if err != nil {
+		return nil, dbxpluginsdk.NewError(-32602, "无法构造请求："+err.Error())
+	}
+	for key, value := range request.Headers {
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, dbxpluginsdk.NewError(-32000, "网络请求失败："+err.Error())
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxNetResponseBytes))
+	if err != nil {
+		return nil, dbxpluginsdk.NewError(-32000, "读取响应失败："+err.Error())
+	}
+
+	headers := make(map[string]string, len(resp.Header))
+	for key := range resp.Header {
+		headers[key] = resp.Header.Get(key)
+	}
+
+	return map[string]any{
+		"status":  resp.StatusCode,
+		"headers": headers,
+		"body":    base64.StdEncoding.EncodeToString(data),
+		"url":     resp.Request.URL.String(),
+	}, nil
+}
+
+// revealDir 用系统资源管理器打开目录
+// 宿主沙箱（sandbox="allow-scripts"，origin 为 null）里 Chrome 会直接拒绝
+// showDirectoryPicker，插件拿不到系统自带的目录选择框。所以给用户留一条
+// 真正的「资源管理器」通路：在这里浏览、复制地址栏里的路径，再粘到插件的
+// 地址栏里确认 —— 比自己画一棵目录树更接近用户熟悉的操作。
+func (a *app) revealDir(params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	var request struct {
+		Path string `json:"path"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &request); err != nil {
+			return nil, dbxpluginsdk.NewError(-32602, "参数格式错误")
+		}
+	}
+	target := strings.TrimSpace(request.Path)
+	if target == "" {
+		target = a.root
+	}
+	target = filepath.Clean(expandUser(target))
+	if !dirExists(target) {
+		return nil, dbxpluginsdk.NewError(-32000, "目录不存在："+target)
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		// explorer 对已存在的目录会直接打开；它的返回码不可靠，所以不检查退出码
+		cmd = exec.Command("explorer", target)
+	case "darwin":
+		cmd = exec.Command("open", target)
+	default:
+		cmd = exec.Command("xdg-open", target)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, dbxpluginsdk.NewError(-32000, "无法打开文件管理器："+err.Error())
+	}
+	// 不等待：资源管理器会一直开着，等它退出会把 RPC 卡死
+	go func() { _ = cmd.Wait() }()
+	return map[string]any{"ok": true, "path": target}, nil
 }
 
 // mkdir 在指定父目录下新建文件夹，返回新目录的绝对路径

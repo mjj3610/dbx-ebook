@@ -192,6 +192,32 @@ try {
 }
 check('拒绝相对路径', relativeRejected)
 
+console.log('\n[7] net/request（宿主里页面 fetch 被 CSP 挡住，出网必须走后端）')
+let schemeRejected = ''
+try {
+  await call('net/request', { url: 'file:///C:/Windows/win.ini', method: 'GET' })
+} catch (error) {
+  schemeRejected = error.message
+}
+check('拒绝非 http(s) 协议', /http/.test(schemeRejected), schemeRejected)
+
+let netFailed = ''
+try {
+  // 127.0.0.1:1 一定连不上，用它验证「失败路径」而不是依赖外网
+  await call('net/request', { url: 'http://127.0.0.1:1/', method: 'GET', timeoutMs: 2000 })
+} catch (error) {
+  netFailed = error.message
+}
+check('连不上时返回可读错误', /网络请求失败|超时/.test(netFailed), netFailed)
+
+let badBody = ''
+try {
+  await call('net/request', { url: 'http://127.0.0.1:1/', method: 'POST', body: '不是 base64' })
+} catch (error) {
+  badBody = error.message
+}
+check('拒绝非法 base64 请求体', /base64/.test(badBody), badBody)
+
 child.kill()
 rmSync(dataDir, { recursive: true, force: true })
 rmSync(externalDir, { recursive: true, force: true })
