@@ -285,3 +285,24 @@ checksums.json
 - **跨平台发包**：`npm run pack` 只构建当前平台的后端，Windows 包内是 `bin/windows-x64/backend.exe`；macOS / Linux 需各平台各打一次。
 - **早期 `.bin` 文件**：1.0.0 版本导入的书籍在磁盘上是 `<id>.bin`（当时元信息晚于文件写入），1.1.0 起为 `<id>.<format>`；已存在的旧文件仍可正常读取，不影响使用。
 - **听书音色**：取决于系统 TTS 语音包，桌面端建议安装中文语音。
+
+## 七、上架到 DBX Store
+
+本插件按官方流程提交到 [`t8y2/dbx-store`](https://github.com/t8y2/dbx-store)：**提交的是一个含两个 JSON 文件的 PR，不是 `.dbxp`**；
+安装包由商店审核后用仓库密钥签名发布，作者不持有签名私钥，也不要运行 `keygen`。
+
+| 文件 | 作用 |
+| --- | --- |
+| `LICENSE` | GPL-3.0 全文（商店对新上架插件强制要求许可证） |
+| `THIRD-PARTY-NOTICES.md` | 随包分发的第三方组件与许可（pdf.js / JSZip / Vue / DBX Go SDK） |
+| `.dbx-store.json` | 商店展示信息：名称、简介、图标、tags、权限、许可、中英文本地化 |
+| `.github/workflows/plugin-release.yml` | 发布 Release 时按 5 个平台矩阵构建未签名候选包，复用官方可复用工作流 |
+| `scripts/make-store-candidate.mjs` | 读 Release 上的 `release-candidates.json` + `.dbx-store.json`，生成商店要的 `candidates/<id>.json` 与 `publishers/<id>.json`，并做一致性校验 |
+
+```bash
+npm run pack:ci                                            # CI 里用的打包命令，输出 dist/
+npm run store:candidate -- --validate                      # 生成并校验商店候选文件
+```
+
+完整步骤（建仓库 → 打 tag 发 Release → CI 出包 → 生成候选 → 提 PR → 审核签名 → 版本更新）见
+[`docs/商店上架指南.md`](docs/商店上架指南.md)，其中包含可直接粘贴的 PR 描述模板。
