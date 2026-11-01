@@ -7,7 +7,7 @@
   "publisher": "csisolar",
   "description": "Read EPUB, PDF, TXT, MOBI, AZW3, comics and 12 more formats with paged or scrolling layouts, text-to-speech, translation, highlights and notes.",
   "icon": "assets/plugin.svg",
-  "homepage": "https://dbxio.com",
+  "homepage": "https://github.com/mjj3610/dbx-ebook",
   "engines": {
     "dbx": ">=0.5.68",
     "host_api": "1"
