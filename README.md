@@ -157,7 +157,7 @@ dbx-ebook/
 | --- | --- | --- |
 | `manifest_version` | `1` | 固定值，标识清单版本 |
 | `id` | `com.csisolar.ebook` | 反向域名式唯一标识 |
-| `name` / `version` / `publisher` | `E-book Reader` / `1.1.0` / `csisolar` | 基础元信息 |
+| `name` / `version` / `publisher` | `E-book Reader` / `1.2.0` / `mjj3610` | 基础元信息 |
 | `engines.host_api` | `1` | 声明使用的宿主 API 版本 |
 | `engines.dbx` | `>=0.5.68` | 兼容的 DBX 版本下限 |
 | `entrypoints.ui.root` | `ui` | 前端产物根目录 |
@@ -297,7 +297,7 @@ checksums.json
 | `THIRD-PARTY-NOTICES.md` | 随包分发的第三方组件与许可（pdf.js / JSZip / Vue / DBX Go SDK） |
 | `.dbx-store.json` | 商店展示信息：名称、简介、图标、tags、权限、许可、中英文本地化 |
 | `.github/workflows/plugin-release.yml` | 发布 Release 时按 5 个平台矩阵构建未签名候选包，复用官方可复用工作流 |
-| `scripts/make-store-candidate.mjs` | 读 Release 上的 `release-candidates.json` + `.dbx-store.json`，生成商店要的 `candidates/<id>.json` 与 `publishers/<id>.json`，并做一致性校验 |
+| `scripts/make-store-candidate.mjs` | 读 Release 上的 `release-candidates.json` + `.dbx-store.json`，生成商店要的 `candidates/<id>.json` 与 `publishers/<publisher>.json`，并做一致性校验 |
 
 ```bash
 npm run pack:ci                                            # CI 里用的打包命令，输出 dist/

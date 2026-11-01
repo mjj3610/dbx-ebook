@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	dbxpluginsdk "github.com/csisolar/dbx-ebook/backend/internal/dbxpluginsdk"
+	dbxpluginsdk "github.com/mjj3610/dbx-ebook/backend/internal/dbxpluginsdk"
 )
 
 const (

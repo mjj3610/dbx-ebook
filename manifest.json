@@ -4,7 +4,7 @@
   "id": "com.csisolar.ebook",
   "name": "E-book Reader",
   "version": "1.2.0",
-  "publisher": "csisolar",
+  "publisher": "mjj3610",
   "description": "Read EPUB, PDF, TXT, MOBI, AZW3, comics and 12 more formats with paged or scrolling layouts, text-to-speech, translation, highlights and notes.",
   "icon": "assets/plugin.svg",
   "homepage": "https://github.com/mjj3610/dbx-ebook",
