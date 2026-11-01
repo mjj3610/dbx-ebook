@@ -157,7 +157,7 @@ dbx-ebook/
 | --- | --- | --- |
 | `manifest_version` | `1` | 固定值，标识清单版本 |
 | `id` | `com.mjj3610.ebook` | 反向域名式唯一标识 |
-| `name` / `version` / `publisher` | `E-book Reader` / `1.2.1` / `mjj3610` | 基础元信息 |
+| `name` / `version` / `publisher` | `E-book Reader` / `1.2.2` / `mjj3610` | 基础元信息 |
 | `engines.host_api` | `1` | 声明使用的宿主 API 版本 |
 | `engines.dbx` | `>=0.5.68` | 兼容的 DBX 版本下限 |
 | `entrypoints.ui.root` | `ui` | 前端产物根目录 |
@@ -189,8 +189,8 @@ include = ["assets", "ui"]      # 只有这两个目录会进包
 ### 4.3 产物
 
 ```text
-release/com.mjj3610.ebook-1.2.1-windows-x64.dbxp            # 安装包（非 zip 后缀）
-release/com.mjj3610.ebook-1.2.1-windows-x64.artifact.json   # target / url / sha256 / size
+release/com.mjj3610.ebook-1.2.2-windows-x64.dbxp            # 安装包（非 zip 后缀）
+release/com.mjj3610.ebook-1.2.2-windows-x64.artifact.json   # target / url / sha256 / size
 ```
 
 > 带原生 Sidecar 后不再出 universal 包：CLI 按当前宿主目标构建后端，产物名带 `-windows-x64`

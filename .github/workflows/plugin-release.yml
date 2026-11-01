@@ -1,8 +1,8 @@
 # 发布 Release 时自动构建各平台的未签名候选包
 #
 # 触发：在 GitHub 上「发布」一个 Release（不是仅打 tag）
-#   1. 版本号与 manifest.json / package.json 一致（本次为 1.2.1）
-#   2. Release 标签形如 v1.2.1
+#   1. 版本号与 manifest.json / package.json 一致（本次为 1.2.2）
+#   2. Release 标签形如 v1.2.2
 #   3. 发布后本工作流按平台矩阵各构建一个 .dbxp 候选包
 #   4. 产物上传到该 Release：5 个 .dbxp + release-candidates.json
 #
@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       release-tag:
-        description: 已存在的 Release 标签（手动补发时填写，例如 v1.2.1）
+        description: 已存在的 Release 标签（手动补发时填写，例如 v1.2.2）
         required: true
         type: string
 

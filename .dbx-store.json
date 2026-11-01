@@ -14,10 +14,10 @@
     "host.network:https://libretranslate.com:443",
     "host.network:https://dav.jianguoyun.com:443"
   ],
-  "source": "https://github.com/mjj3610/dbx-ebook/tree/v1.2.1",
+  "source": "https://github.com/mjj3610/dbx-ebook/tree/v1.2.2",
   "homepage": "https://github.com/mjj3610/dbx-ebook",
   "license": "GPL-3.0-or-later",
-  "releaseNotes": "First public release: 18 book formats, paged/double-page/scrolling layouts, text-to-speech, translation, highlights and notes, real on-disk library via native sidecar, in-app folder picker for the library location.",
+  "releaseNotes": "18 book formats, paged/double-page/scrolling layouts, text-to-speech, translation, highlights and notes, real on-disk library via native sidecar, in-app folder picker. v1.2.2: visible previous/next page buttons in every paged layout, working double-page spread, swipe-to-turn on touch screens, and imported PDFs now keep the file name on disk instead of the stale embedded title.",
   "localizations": {
     "zh-CN": {
       "name": "电子书阅读器",
