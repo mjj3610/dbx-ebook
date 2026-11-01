@@ -1,0 +1,58 @@
+# 发布 Release 时自动构建各平台的未签名候选包
+#
+# 触发：在 GitHub 上「发布」一个 Release（不是仅打 tag）
+#   1. 版本号与 manifest.json / package.json 一致（本次为 1.2.0）
+#   2. Release 标签形如 v1.2.0
+#   3. 发布后本工作流按平台矩阵各构建一个 .dbxp 候选包
+#   4. 产物上传到该 Release：5 个 .dbxp + release-candidates.json
+#
+# 说明：
+# - 复用 DBX 官方的 plugin-release-reusable.yml，不自己实现签名/合并逻辑
+# - 产物是「未签名候选包」，签名由 DBX Store 审核后用仓库密钥完成，作者不持私钥
+# - 带原生 Sidecar 的插件必须按平台分别构建，因此这里跑 5 个 runner
+# - 若某个平台 runner 不可用（例如组织禁用了 arm runner），删掉对应矩阵项即可，
+#   其余平台仍会正常出包；但 publish 需要所有 build 成功，删项后才不会整体失败
+
+name: Release DBX plugin
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: 已存在的 Release 标签（手动补发时填写，例如 v1.2.0）
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    uses: t8y2/dbx/.github/workflows/plugin-release-reusable.yml@main
+    permissions:
+      contents: write
+    with:
+      release-tag: ${{ github.event.release.tag_name || inputs.release-tag }}
+
+      # 构建前端产物后打包；CLI 由可复用工作流全局安装
+      # DBX_PLUGIN_TARGET 由工作流按矩阵注入，dbx-plugin 会自动读取
+      package-command: npm ci && npm run build && npm run pack:ci
+      package-path: dist/*.dbxp
+      metadata-path: dist/*.artifact.json
+
+      node-version: '22'
+      go-version: '1.22.x'
+      # 本插件无 Rust 代码：留空可跳过 Rust 工具链安装
+      rust-toolchain: ''
+      plugin-cli-version: '0.1.9'
+
+      build-matrix: >-
+        {"include":[
+        {"runner":"windows-2022","target":"windows-x64"},
+        {"runner":"ubuntu-24.04","target":"linux-x64"},
+        {"runner":"ubuntu-24.04-arm","target":"linux-arm64"},
+        {"runner":"macos-15-intel","target":"darwin-x64"},
+        {"runner":"macos-15","target":"darwin-arm64"}
+        ]}

@@ -1,0 +1,27 @@
+node_modules/
+ui/
+dist/
+.dbx-dev/
+.dbx-repository-signing-key.env
+release/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# 测试产物
+fixtures/
+.tmp/
+bin/
+
+# 编辑器 / 本地工作区（含会话记录与草稿，不进公开仓库）
+.workbuddy/
+.vscode/
+.idea/
+
+# 宿主调试与真实文件测试产生的截图：可能含本机书库内容与个人文档，一律不入库
+screenshots/*host-*.png
+screenshots/*real*.png
+screenshots/1[2-9]-*.png
+screenshots/2[0-9]-*.png

@@ -1,0 +1,19 @@
+# DBX 插件打包配置
+# schema_version 固定为 1；include 中的目录会按相对路径打进 .dbxp
+schema_version = 1
+
+# 原生 Sidecar：书库真正落盘到用户磁盘
+# language 支持 go / rust；directory 是源码目录，binary 是打包后的可执行文件名
+[backend]
+language = "go"
+directory = "backend"
+binary = "backend"
+
+[package]
+include = ["assets", "ui"]
+
+[dev]
+# dbx-plugin dev 前自动构建 UI
+# 说明：Windows 下 CLI 以 \\?\ 前缀路径作为 cwd 调用构建命令，CMD 不支持该路径（EISDIR: 'G:'），
+# 会报 "Build failed"。如需使用 dbx-plugin dev，请先手动 `npm run build`，并临时注释本行。
+# ui_build = ["npm", "run", "build"]

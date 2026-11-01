@@ -1,0 +1,273 @@
+/* ===== 全局设计令牌与基础样式 ===== */
+:root {
+  --c-primary: #4f7cff;
+  --c-primary-dark: #3d68e8;
+  --c-primary-soft: #eef3ff;
+  --c-bg: #f4f6f9;
+  --c-panel: #ffffff;
+  --c-text: #1f2329;
+  --c-text-2: #5a616b;
+  --c-text-3: #8a9099;
+  --c-border: #e6e8ec;
+  --c-subtle: #f7f8fa;
+  --c-hover: #f5f7fa;
+  --c-danger: #e5484d;
+  --c-success: #18a058;
+  --c-warning: #f0a020;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 16px;
+  --shadow-s: 0 1px 2px rgba(20, 26, 40, 0.04), 0 2px 8px rgba(20, 26, 40, 0.04);
+  --shadow-m: 0 6px 24px rgba(20, 26, 40, 0.10);
+  --shadow-l: 0 18px 48px rgba(20, 26, 40, 0.16);
+  --font-ui: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  --header-h: 56px;
+  color-scheme: light;
+}
+
+/* 跟随宿主深色外观（DBX 会在 html 上写入 data-dbx-theme，本插件同时维护 data-appearance） */
+html[data-appearance='dark'],
+html[data-dbx-theme='dark'] {
+  --c-primary: #6f92ff;
+  --c-primary-dark: #5680ff;
+  --c-primary-soft: #1e2637;
+  --c-bg: #14161b;
+  --c-panel: #1c1f26;
+  --c-text: #e6e8ec;
+  --c-text-2: #aab1bc;
+  --c-text-3: #767d88;
+  --c-border: #2b3038;
+  --c-subtle: #22262e;
+  --c-hover: #262b34;
+  --c-danger: #f06a6f;
+  --c-success: #37b26c;
+  --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-m: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --shadow-l: 0 18px 48px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--c-text);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-s);
+  padding: 7px 10px;
+  background: var(--c-panel);
+  outline: none;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.12);
+}
+
+/* 按钮体系 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-m);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.16s, color 0.16s, border-color 0.16s, transform 0.06s;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--c-primary-dark);
+}
+
+.btn-ghost {
+  border: 1px solid var(--c-border);
+  background: var(--c-panel);
+  color: var(--c-text-2);
+}
+
+.btn-ghost:hover {
+  border-color: #cfd6e4;
+  color: var(--c-text);
+}
+
+.btn-text {
+  color: var(--c-text-2);
+  padding: 0 8px;
+  height: 30px;
+}
+
+.btn-text:hover {
+  color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+
+.btn-danger {
+  background: var(--c-danger);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 图标按钮 */
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-m);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-2);
+  transition: background 0.16s, color 0.16s;
+}
+
+.icon-btn:hover {
+  background: rgba(31, 35, 41, 0.06);
+  color: var(--c-text);
+}
+
+.icon-btn.active {
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+}
+
+/* 滑块：统一细轨道 + 圆形拇指 */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #dfe3ea;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--c-panel);
+  border: 2px solid var(--c-primary);
+  box-shadow: 0 1px 4px rgba(20, 26, 40, 0.18);
+  transition: transform 0.12s;
+}
+
+input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #dfe3ea;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c-panel);
+  border: 2px solid var(--c-primary);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 35, 41, 0.16);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(31, 35, 41, 0.28);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 通用抽屉/对话框动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s;
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(16px);
+  opacity: 0;
+}
+
+/* 无障碍焦点 */
+:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}

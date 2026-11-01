@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t8y2/dbx/plugin-sdk-v1/plugins/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "com.csisolar.ebook",
+  "name": "E-book Reader",
+  "version": "1.2.0",
+  "publisher": "csisolar",
+  "description": "Read EPUB, PDF, TXT, MOBI, AZW3, comics and 12 more formats with paged or scrolling layouts, text-to-speech, translation, highlights and notes.",
+  "icon": "assets/plugin.svg",
+  "homepage": "https://dbxio.com",
+  "engines": {
+    "dbx": ">=0.5.68",
+    "host_api": "1"
+  },
+  "permissions": [
+    "host.network:https://api.openai.com:443",
+    "host.network:https://libretranslate.com:443",
+    "host.network:https://dav.jianguoyun.com:443"
+  ],
+  "entrypoints": {
+    "backend": {
+      "executable": "bin/backend"
+    },
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    }
+  },
+  "contributions": [
+    {
+      "type": "workbench",
+      "id": "com.csisolar.ebook.workbench",
+      "label": "电子书阅读器",
+      "description": "支持 18 种格式的电子书阅读工作台。",
+      "icon": "assets/plugin.svg"
+    }
+  ],
+  "localizations": {
+    "zh-CN": {
+      "name": "电子书阅读器",
+      "description": "支持 EPUB、PDF、TXT、MOBI、AZW3、漫画书等 18 种格式，提供单 / 双页 / 滚动阅读、听书、翻译、高亮笔记与备份同步。",
+      "contributions": {
+        "com.csisolar.ebook.workbench": {
+          "label": "电子书阅读器",
+          "description": "支持 18 种格式的电子书阅读工作台。"
+        }
+      }
+    }
+  }
+}
