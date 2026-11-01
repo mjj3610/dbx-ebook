@@ -26,13 +26,13 @@ on:
         type: string
 
 permissions:
-  contents: read
+  # 被调用的官方工作流要把构建出的候选包上传到 Release，需要写权限；
+  # 放在顶层而不是 job 级，避免可复用工作流拿不到提升后的 token 作用域
+  contents: write
 
 jobs:
   release:
     uses: t8y2/dbx/.github/workflows/plugin-release-reusable.yml@main
-    permissions:
-      contents: write
     with:
       release-tag: ${{ github.event.release.tag_name || inputs.release-tag }}
 
