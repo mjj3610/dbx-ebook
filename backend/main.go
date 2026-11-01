@@ -35,7 +35,7 @@ import (
 
 const (
 	pluginID      = "com.mjj3610.ebook"
-	pluginVersion = "1.2.2"
+	pluginVersion = "1.2.3"
 	libraryFile   = "library.json"
 	booksDirName  = "books"
 	configFile    = "config.json"
