@@ -33,6 +33,13 @@ const SAMPLE = [
   '清晨的风穿过窗棂，把桌上的信纸吹得簌簌作响。',
   '他伸手按住纸角，读到最后一行时，手指停住了。',
   '',
+  // 长正文：只有超过一屏才测得到翻页与双页（早期样本只有 3 段，分页形同未测）
+  ...Array.from({ length: 160 }, (_, index) =>
+    index % 23 === 7
+      ? `curl -Uri "https://mss-agi.openai.azure.com/openai/deployments/gpt-5.6-luna/chat/completions?api-version=2024-10-21?p=${index}" -Method Post`
+      : `第 ${index + 3} 段：风从河谷里升起，掠过檐角，把摊开的书页翻到另一面；远处的山脊被阳光一层层点亮。`,
+  ),
+  '',
   '第二章 渡口',
   '',
   '渡口的船工说，今年的水比往年都要急。',
@@ -126,6 +133,70 @@ const reader = await frame.evaluate(() => {
 })
 check('阅读器打开并渲染正文', reader.body.includes('清晨的风'), `实际: ${reader.body.slice(0, 60)}`)
 check('正文栏宽受 820px 上限约束', reader.pageHostWidth > 0 && reader.pageHostWidth <= 820, `实际: ${reader.pageHostWidth}px`)
+
+// 分页几何：纸面必须留在阅读区内，翻页后不能把整张纸甩出视口
+const pageMetrics = () =>
+  frame.evaluate(() => {
+    const stage = document.querySelector('.stage')
+    const frameEl = document.querySelector('.page-frame')
+    const host = document.querySelector('.page-host')
+    if (!stage || !frameEl || !host) return null
+    const book = host.shadowRoot?.querySelector('.book')
+    const sr = stage.getBoundingClientRect()
+    const fr = frameEl.getBoundingClientRect()
+    const hr = host.getBoundingClientRect()
+    const mid = hr.left + hr.width / 2
+    const visible = [...(book?.querySelectorAll('p') ?? [])].filter((el) => {
+      const r = el.getBoundingClientRect()
+      return r.left >= hr.left - 1 && r.left < hr.right - 1 && r.top >= hr.top - 1 && r.top < hr.bottom
+    })
+    return {
+      inStage: fr.x >= sr.x - 1 && fr.x + fr.width <= sr.x + sr.width + 1,
+      frameW: Math.round(fr.width),
+      columnWidth: parseFloat(book?.style.columnWidth ?? '0'),
+      transform: book?.style.transform ?? '',
+      visibleCount: visible.length,
+      leftHalf: visible.filter((el) => el.getBoundingClientRect().left < mid).length,
+      rightHalf: visible.filter((el) => el.getBoundingClientRect().left >= mid).length,
+      labels: document.querySelector('.labels')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    }
+  })
+
+const flowFirst = await pageMetrics()
+check('纸面完整落在阅读区内', Boolean(flowFirst?.inStage))
+check('首屏有可见正文', (flowFirst?.visibleCount ?? 0) > 0, `visible=${flowFirst?.visibleCount}`)
+
+await frame.locator('.pager-next').click()
+await page.waitForTimeout(700)
+const flowSecond = await pageMetrics()
+check('翻页后位移改变', flowSecond?.transform !== flowFirst?.transform, String(flowSecond?.transform))
+check('翻页后纸面仍在阅读区内', Boolean(flowSecond?.inStage))
+check('翻页后仍有可见正文（不是空白页）', (flowSecond?.visibleCount ?? 0) > 0, `visible=${flowSecond?.visibleCount}`)
+check('进度百分比前进', flowSecond?.labels !== flowFirst?.labels, `${flowFirst?.labels} → ${flowSecond?.labels}`)
+await page.screenshot({ path: `${SHOTS}/13-host-paged.png` })
+
+// 双页：两列都要有正文
+await frame.evaluate(() => {
+  const buttons = [...document.querySelectorAll('.right .icon-btn')]
+  buttons[3]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
+await page.waitForTimeout(700)
+await frame.evaluate(() => {
+  const target = [...document.querySelectorAll('.segmented button')].find((b) => (b.textContent ?? '').includes('双页'))
+  target?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
+await page.waitForTimeout(1500)
+await page.keyboard.press('Escape')
+await page.waitForTimeout(600)
+const flowDouble = await pageMetrics()
+check('双页两列都有正文', (flowDouble?.leftHalf ?? 0) > 0 && (flowDouble?.rightHalf ?? 0) > 0, `left=${flowDouble?.leftHalf} right=${flowDouble?.rightHalf}`)
+check('双页纸面完整落在阅读区内', Boolean(flowDouble?.inStage))
+await page.screenshot({ path: `${SHOTS}/13-host-double.png` })
+await frame.evaluate(() => {
+  const target = [...document.querySelectorAll('.segmented button')].find((b) => (b.textContent ?? '').includes('单页'))
+  target?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
+await page.waitForTimeout(900)
 
 await page.screenshot({ path: `${SHOTS}/13-host-degraded-reader.png` })
 

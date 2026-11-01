@@ -41,10 +41,15 @@ export function buildBookCss(settings: ReaderSettings, bookCssText = ''): string
   overflow-wrap:break-word;
   text-align:justify;
   -webkit-font-smoothing:antialiased;
+  /* 分页模式下 .book 是多栏容器，翻页位移作用在它身上（纸面本身不动） */
+  will-change:transform;
+  transition:transform .26s cubic-bezier(.33,0,.2,1);
 }
 .book *{max-width:100%;box-sizing:border-box;}
 .book p{margin:0 0 .85em;text-indent:2em;}
 .book p.blank{text-indent:0;height:.8em;margin:0;}
+/* 代码 / 命令行：两端对齐会把空格撑成巨大间隙，且长 token 需要任意位置断行 */
+.book p.code{text-align:left;text-indent:0;word-break:break-all;overflow-wrap:anywhere;white-space:normal;}
 .book h1,.book h2,.book h3,.book h4{line-height:1.4;margin:1.2em 0 .7em;font-weight:600;text-indent:0;}
 .book h1{font-size:1.5em;}
 .book h2{font-size:1.28em;}

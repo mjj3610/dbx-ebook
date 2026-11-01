@@ -286,12 +286,34 @@ export function extname(filename: string): string {
   return match ? match[1].toLowerCase() : ''
 }
 
+/**
+ * 判断一行是否属于「代码 / 命令」形态
+ * 依据：超长不可断词（URL、token）、原文缩进、常见命令名，或高 ASCII 占比且带语法符号。
+ * 这类行两端对齐会把空格撑开成巨大间隙，读起来像排版错乱，因此单独标记后改为左对齐 + 任意位置断行。
+ */
+export function looksLikeCodeLine(raw: string): boolean {
+  const line = raw.trim()
+  if (!line) return false
+  if (/[^\s\u3000]{40,}/.test(line)) return true
+  if (/^[\t\u3000]* {2,}\S/.test(raw)) return true
+  if (/^(curl|wget|git|npm|npx|pnpm|yarn|docker|kubectl|ssh|scp|sudo|pip|go)\b/.test(line)) return true
+  // 高 ASCII 占比 + 明显的语法符号：JSON 片段、参数行、花括号行等
+  const asciiRatio = line.replace(/[^\x20-\x7e]/g, '').length / line.length
+  if (asciiRatio > 0.85 && /^(?:[-"'{}\[\]#<>]|\/\/)|\s=\s|":\s/.test(line)) return true
+  return false
+}
+
 /** 将纯文本按段落转为 HTML */
 export function textToParagraphHtml(text: string): string {
   return text
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .map((line) => (line ? `<p>${escapeHtml(line)}</p>` : '<p class="blank"></p>'))
+    .map((raw) => {
+      const line = raw.trim()
+      if (!line) return '<p class="blank"></p>'
+      // 缩进判断要用原始行，trim 之后就看不出缩进了
+      const cls = looksLikeCodeLine(raw) ? ' class="code"' : ''
+      return `<p${cls}>${escapeHtml(line)}</p>`
+    })
     .join('')
 }
 

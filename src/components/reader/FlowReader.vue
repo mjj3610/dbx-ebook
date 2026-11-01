@@ -3,7 +3,10 @@
   <div class="flow-reader" :class="`mode-${settings.mode}`">
     <!-- 分页模式 -->
     <div v-if="settings.mode !== 'scroll'" ref="stageRef" class="stage" @mouseup="onMouseUp" @touchend="onMouseUp">
-      <div ref="hostRef" class="page-host" :style="hostStyle" />
+      <!-- 纸面（含内边距）与裁剪窗口分离：位移只作用在正文上，纸面永远不动 -->
+      <div ref="frameRef" class="page-frame">
+        <div ref="hostRef" class="page-host" />
+      </div>
       <button class="edge edge-left" :aria-label="t('reader.prev')" @click="prev" />
       <button class="edge edge-right" :aria-label="t('reader.next')" @click="next" />
       <button class="pager pager-prev" :disabled="atStart" :aria-label="t('reader.prev')" :title="t('reader.prev')" @click.stop="prev">
@@ -61,15 +64,15 @@ const emit = defineEmits<{
 }>()
 
 const stageRef = ref<HTMLElement | null>(null)
+const frameRef = ref<HTMLElement | null>(null)
 const hostRef = ref<HTMLElement | null>(null)
 const scrollerRef = ref<HTMLElement | null>(null)
 
 const chapterIndex = ref(Math.min(Math.max(props.initialChapter, 0), props.doc.chapters.length - 1))
 const page = ref(props.initialPage)
 const pageCount = ref(1)
-/** 实际每页列数（双页模式在窄屏会自动降级） */
-const columnsPerPage = ref(1)
-const hostStyle = ref<Record<string, string>>({})
+/** 一屏（单页或双页）的总宽度（px），即正文可见区宽度 */
+const spreadWidth = ref(0)
 
 const shells = new Map<number, HTMLElement>()
 const mountedChapters = new Set<number>()
@@ -108,27 +111,61 @@ async function renderPaged(keepPercent = false): Promise<void> {
   applyChapterNotes(root, chapterIndex.value)
   measure(host, stage)
   if (keepPercent) page.value = Math.round(ratio * Math.max(pageCount.value - 1, 0))
-  setPage(page.value)
+  // 重建时直接落位，不做翻页动画（measure 已把位移归零，动画会横跨整章）
+  setPage(page.value, false)
   emitReady()
 }
 
-/** 测量分页参数 */
+/** 取分页容器内承载正文的节点（Shadow DOM 内的 .book） */
+function bookElement(host: HTMLElement | null): HTMLElement | null {
+  return (host?.shadowRoot?.querySelector('.book') as HTMLElement | null) ?? null
+}
+
+/**
+ * 测量分页参数
+ * 关键：纸面（.page-host）本身是固定不动的「窗口」，多栏布局与翻页位移都发生在
+ * Shadow DOM 内的 .book 上。早期把 column-* 与 transform 都放在 host 上，
+ * 结果是翻页时整张纸被移出 stage，第二页起屏幕只剩空白。
+ */
 function measure(host: HTMLElement, stage: HTMLElement): void {
-  const width = Math.min(stage.clientWidth, READING_COLUMN_MAX)
-  const height = stage.clientHeight
-  if (width <= 0 || height <= 0) return
+  const frame = frameRef.value
+  const stageStyle = getComputedStyle(stage)
+  const padX = (parseFloat(stageStyle.paddingLeft) || 0) + (parseFloat(stageStyle.paddingRight) || 0)
+  const padY = (parseFloat(stageStyle.paddingTop) || 0) + (parseFloat(stageStyle.paddingBottom) || 0)
+  // 纸面内边距由 .page-frame 的 padding 提供，正文可用宽高都要先扣掉
+  const insetX = frame ? (parseFloat(getComputedStyle(frame).paddingLeft) || 0) + (parseFloat(getComputedStyle(frame).paddingRight) || 0) : 0
+  const insetY = frame ? (parseFloat(getComputedStyle(frame).paddingTop) || 0) + (parseFloat(getComputedStyle(frame).paddingBottom) || 0) : 0
+  // clientWidth/clientHeight 含 padding，必须扣掉，否则窄屏下纸面会溢出被裁
+  const available = Math.max(0, stage.clientWidth - padX - insetX)
+  const height = Math.max(0, stage.clientHeight - padY - insetY)
+  if (available < 120 || height < 120) return
 
-  const perPage = props.settings.mode === 'double' && width >= DOUBLE_PAGE_MIN_WIDTH ? 2 : 1
-  columnsPerPage.value = perPage
-  const columnWidth = perPage === 2 ? (width - COLUMN_GAP) / 2 : width
+  const wantDouble = props.settings.mode === 'double' && available >= DOUBLE_PAGE_MIN_WIDTH
+  const perPage = wantDouble ? 2 : 1
+  const columnWidth = wantDouble
+    ? Math.min(READING_COLUMN_MAX, (available - COLUMN_GAP) / 2)
+    : Math.min(READING_COLUMN_MAX, available)
+  const spread = perPage === 2 ? columnWidth * 2 + COLUMN_GAP : columnWidth
 
-  host.style.width = `${width}px`
+  spreadWidth.value = spread
+
+  if (frame) frame.style.width = `${spread}px`
+  host.style.width = `${spread}px`
   host.style.height = `${height}px`
-  host.style.columnWidth = `${columnWidth}px`
-  host.style.columnGap = `${COLUMN_GAP}px`
-  host.style.columnFill = 'auto'
 
-  // 强制重排后读取滚动宽度
+  const book = bookElement(host)
+  if (book) {
+    book.style.height = '100%'
+    book.style.columnWidth = `${columnWidth}px`
+    book.style.columnGap = `${COLUMN_GAP}px`
+    book.style.columnFill = 'auto'
+    // 关键：位移会让 .book 的内容包围盒整体左移，scrollWidth 随之变小 → 列数被低估。
+    // 测量前必须先归零并关掉过渡，测量后再由 setPage 写回真实位移。
+    book.style.transition = 'none'
+    book.style.transform = 'translate3d(0px, 0px, 0px)'
+  }
+
+  // 强制重排后读取滚动宽度（host 为 overflow:hidden 的滚动容器，能反映 .book 的溢出列）
   const totalWidth = host.scrollWidth
   const totalColumns = Math.max(1, Math.round((totalWidth + COLUMN_GAP) / (columnWidth + COLUMN_GAP)))
   pageCount.value = Math.max(1, Math.ceil(totalColumns / perPage))
@@ -136,13 +173,19 @@ function measure(host: HTMLElement, stage: HTMLElement): void {
 }
 
 /** 翻到指定页 */
-function setPage(target: number): void {
+function setPage(target: number, animate = true): void {
   const host = hostRef.value
-  const stage = stageRef.value
-  if (!host || !stage) return
-  const width = Math.min(stage.clientWidth, READING_COLUMN_MAX)
+  if (!host) return
   page.value = Math.min(Math.max(target, 0), Math.max(pageCount.value - 1, 0))
-  host.style.transform = `translate3d(${-page.value * (width + COLUMN_GAP)}px, 0, 0)`
+  const book = bookElement(host)
+  if (book) {
+    const step = spreadWidth.value + COLUMN_GAP
+    // measure 为测量准确把过渡关掉了：翻页时先恢复并强制重排，位移才会走动画；
+    // 重建落位则保持无动画，避免从第 1 页横跨整章滑到当前页。
+    book.style.transition = animate ? '' : 'none'
+    if (animate) void book.offsetWidth
+    book.style.transform = `translate3d(${-page.value * step}px, 0, 0)`
+  }
   emitProgress()
 }
 
@@ -448,15 +491,19 @@ defineExpose({ next, prev, goToChapter, markSpeech, getParagraphs, chapterTextLe
   overflow: hidden;
 }
 
+/* 纸面：背景与内边距在这里，尺寸固定不动 */
+.page-frame {
+  box-sizing: content-box;
+  margin: 0 auto;
+  padding: 26px 32px;
+  background: var(--rd-paper, #fff);
+  box-shadow: var(--shadow-s);
+}
+
 .page-host {
   /* 显式声明 block：分页容器是 shadow host，若被解析为 inline 会导致 margin:auto 失效、正文贴左 */
   display: block;
-  margin: 0 auto;
-  /* 纸面层次：与工具栏、背景形成区分，且不改变分页尺寸计算 */
-  background: var(--rd-paper, #fff);
-  box-shadow: var(--shadow-s);
-  will-change: transform;
-  transition: transform 0.26s cubic-bezier(0.33, 0, 0.2, 1);
+  /* 裁剪窗口：位移发生在 Shadow DOM 内的 .book 上，窗口本身不动 */
   overflow: hidden;
 }
 
@@ -560,6 +607,10 @@ defineExpose({ next, prev, goToChapter, markSpeech, getParagraphs, chapterTextLe
 @media (max-width: 720px) {
   .stage {
     padding: 0 var(--reader-padding-mobile, 20px);
+  }
+
+  .page-frame {
+    padding: 16px 18px;
   }
 
   .scroller {

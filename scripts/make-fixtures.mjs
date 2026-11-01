@@ -85,6 +85,28 @@ const txt = [
 ].join('\n')
 writeFileSync(join(OUT, 'novel.txt'), txt, 'utf-8')
 
+// 长文本样本：必须能分出多页，否则「翻页 / 双页 / 末页」永远测不到
+// 混入超长 URL 与代码行，复现 text-align:justify 撑开空格、长 token 断行等真实情况
+const LONG_PARAGRAPHS = 420
+const longLines = ['第一章 很长的正文']
+for (let index = 0; index < LONG_PARAGRAPHS; index += 1) {
+  if (index > 0 && index % 70 === 0) {
+    longLines.push('', `第${Math.floor(index / 70) + 1}章 继续`, '')
+  }
+  if (index % 37 === 5) {
+    longLines.push(
+      `curl -Uri "https://mss-agi.openai.azure.com/openai/deployments/gpt-5.6-luna/chat/completions?api-version=2024-10-21" -Method Post`,
+      '',
+    )
+  }
+  longLines.push(
+    `这是第 ${index + 1} 段用于验证分页的正文。风从河谷里升起，掠过檐角，把摊开的书页翻到另一面；` +
+      `他抬起头，看见远处的山脊被阳光一层层点亮，像有人在天边缓缓铺开一条金色的线。`,
+    '',
+  )
+}
+writeFileSync(join(OUT, 'long.txt'), longLines.join('\n'), 'utf-8')
+
 // ---------- EPUB ----------
 const zip = new JSZip()
 zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' })

@@ -64,11 +64,12 @@ await dropFiles([
   'gbk-epub.epub',
   'ru.fb2',
   'cp936.rtf',
+  'long.txt',
 ])
 await page.waitForSelector('.card', { timeout: 20000 })
 await page.waitForTimeout(1500)
 const cardCount = await page.locator('.card').count()
-check('导入 10 本书', cardCount === 10, `实际 ${cardCount}`)
+check('导入 11 本书', cardCount === 11, `实际 ${cardCount}`)
 
 /** 打开指定书籍 */
 async function openBook(title) {
@@ -155,6 +156,101 @@ async function backToShelf() {
   await page.waitForSelector('.shelf', { timeout: 8000 })
   await page.waitForTimeout(500)
 }
+
+console.log('\n[4c] 长文本分页（多页 / 双页 / 重排后不丢页）')
+/** 读取分页几何与可见段落 */
+const flowMetrics = () =>
+  page.evaluate(() => {
+    const frame = document.querySelector('.page-frame')
+    const host = document.querySelector('.page-host')
+    const stage = document.querySelector('.stage')
+    if (!frame || !host || !stage) return null
+    const book = host.shadowRoot?.querySelector('.book')
+    const fr = frame.getBoundingClientRect()
+    const sr = stage.getBoundingClientRect()
+    const hr = host.getBoundingClientRect()
+    const columnWidth = parseFloat(book?.style.columnWidth ?? '0')
+    const mid = hr.left + hr.width / 2
+    const visible = [...(book?.querySelectorAll('p') ?? [])].filter((el) => {
+      const r = el.getBoundingClientRect()
+      return r.left >= hr.left - 1 && r.left < hr.right - 1 && r.top >= hr.top - 1 && r.top < hr.bottom
+    })
+    return {
+      frameX: fr.x,
+      frameW: fr.width,
+      stageX: sr.x,
+      stageW: sr.width,
+      hostW: hr.width,
+      columnWidth,
+      inStage: fr.x >= sr.x - 1 && fr.x + fr.width <= sr.x + sr.width + 1,
+      transform: book?.style.transform ?? '',
+      visibleCount: visible.length,
+      leftHalf: visible.filter((el) => el.getBoundingClientRect().left < mid).length,
+      rightHalf: visible.filter((el) => el.getBoundingClientRect().left >= mid).length,
+      nextDisabled: document.querySelector('.pager-next')?.hasAttribute('disabled') ?? false,
+      labels: document.querySelector('.labels')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    }
+  })
+
+await backToShelf()
+await openBook('long')
+await page.waitForTimeout(600)
+const page1 = await flowMetrics()
+check('长文本首屏有正文', page1.visibleCount > 0, `visible=${page1.visibleCount}`)
+check('纸面完整落在阅读区内', page1.inStage, `frame=${Math.round(page1.frameX)}+${Math.round(page1.frameW)} stage=${Math.round(page1.stageX)}+${Math.round(page1.stageW)}`)
+check('单页纸宽 = 正文列宽 + 内边距', Math.abs(page1.frameW - page1.columnWidth - 64) < 2, `frame=${page1.frameW} col=${page1.columnWidth}`)
+check('进度百分比存在', page1.labels.includes('%'), page1.labels)
+
+await page.locator('.pager-next').click()
+await page.waitForTimeout(600)
+const page2 = await flowMetrics()
+check('翻页后位移改变', page2.transform !== page1.transform, page2.transform)
+check('翻页后纸面仍在阅读区内', page2.inStage, `frameX=${Math.round(page2.frameX)}`)
+check('翻页后仍有正文（不再空白）', page2.visibleCount > 0, `visible=${page2.visibleCount}`)
+check('翻页后进度前进', page2.labels !== page1.labels, `${page1.labels} → ${page2.labels}`)
+
+// 双页：回到本章第 1 页再切，保证左右两列都有内容
+await page.locator('.pager-prev').click()
+await page.waitForTimeout(500)
+await page.locator('.right .icon-btn').nth(3).click()
+await page.waitForTimeout(350)
+await page.locator('.segmented button', { hasText: '双页' }).click()
+await page.waitForTimeout(1200)
+await page.keyboard.press('Escape')
+await page.waitForTimeout(700)
+const doublePage = await flowMetrics()
+check('双页纸宽 ≈ 两列 + 栏间距', Math.abs(doublePage.frameW - (doublePage.columnWidth * 2 + 56) - 64) < 3, `frame=${doublePage.frameW} col=${doublePage.columnWidth}`)
+check('双页两列都有正文', doublePage.leftHalf > 0 && doublePage.rightHalf > 0, `left=${doublePage.leftHalf} right=${doublePage.rightHalf}`)
+check('双页纸面完整落在阅读区内', doublePage.inStage)
+await page.locator('.pager-next').click()
+await page.waitForTimeout(600)
+const doublePage2 = await flowMetrics()
+check('双页翻页位移正确', doublePage2.transform !== doublePage.transform, doublePage2.transform)
+check('双页翻页后两列仍有正文', doublePage2.leftHalf > 0 && doublePage2.rightHalf > 0, `left=${doublePage2.leftHalf} right=${doublePage2.rightHalf}`)
+
+// 复位为单页，避免影响后续用例
+await page.locator('.right .icon-btn').nth(3).click()
+await page.waitForTimeout(350)
+await page.locator('.segmented button', { hasText: '单页' }).click()
+await page.waitForTimeout(800)
+await page.keyboard.press('Escape')
+await page.waitForTimeout(400)
+
+// 末页：先跳到最后一章，再翻到该章最后一页（跨章翻页会让 next 一直可用）
+await page.locator('.range').evaluate((el) => {
+  el.value = '1000'
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+})
+await page.waitForTimeout(1200)
+for (let i = 0; i < 40; i += 1) {
+  if ((await flowMetrics()).nextDisabled) break
+  await page.locator('.pager-next').click()
+  await page.waitForTimeout(120)
+}
+const lastPage = await flowMetrics()
+check('末页禁用下一页', lastPage.nextDisabled, lastPage.labels)
+check('末页纸面仍在阅读区内', lastPage.inStage)
+check('末页仍有正文（不是甩出屏幕的空白）', lastPage.visibleCount > 0, `visible=${lastPage.visibleCount}`)
 
 console.log('\n[5] EPUB')
 await backToShelf()
