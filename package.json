@@ -1,7 +1,7 @@
 {
   "name": "dbx-ebook",
   "private": true,
-  "version": "1.2.3",
+  "version": "1.2.4",
   "type": "module",
   "description": "DBX 电子书阅读器插件：18 种格式、单/双页/滚动、听书、翻译、高亮笔记、备份同步",
   "license": "GPL-3.0-or-later",
