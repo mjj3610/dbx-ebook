@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/t8y2/dbx/plugin-sdk-v1/plugins/manifest.schema.json",
   "manifest_version": 1,
-  "id": "com.csisolar.ebook",
+  "id": "com.mjj3610.ebook",
   "name": "E-book Reader",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "mjj3610",
   "description": "Read EPUB, PDF, TXT, MOBI, AZW3, comics and 12 more formats with paged or scrolling layouts, text-to-speech, translation, highlights and notes.",
   "icon": "assets/plugin.svg",
@@ -29,7 +29,7 @@
   "contributions": [
     {
       "type": "workbench",
-      "id": "com.csisolar.ebook.workbench",
+      "id": "com.mjj3610.ebook.workbench",
       "label": "电子书阅读器",
       "description": "支持 18 种格式的电子书阅读工作台。",
       "icon": "assets/plugin.svg"
@@ -40,7 +40,7 @@
       "name": "电子书阅读器",
       "description": "支持 EPUB、PDF、TXT、MOBI、AZW3、漫画书等 18 种格式，提供单 / 双页 / 滚动阅读、听书、翻译、高亮笔记与备份同步。",
       "contributions": {
-        "com.csisolar.ebook.workbench": {
+        "com.mjj3610.ebook.workbench": {
           "label": "电子书阅读器",
           "description": "支持 18 种格式的电子书阅读工作台。"
         }

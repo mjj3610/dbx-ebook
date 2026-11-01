@@ -20,7 +20,7 @@ import { cpSync, rmSync, existsSync } from 'node:fs'
 const CHROME = resolve(process.env.LOCALAPPDATA ?? '', 'ms-playwright/chromium-1140/chrome-win/chrome.exe')
 const BASE = process.env.E2E_BASE ?? 'http://localhost:4173'
 const FIXTURE_DIR = resolve('ui/fixtures')
-const DEFAULT_ROOT = 'C:\\Users\\demo\\AppData\\Roaming\\dbx\\plugin-data\\com.csisolar.ebook\\library'
+const DEFAULT_ROOT = 'C:\\Users\\demo\\AppData\\Roaming\\dbx\\plugin-data\\com.mjj3610.ebook\\library'
 
 let failed = 0
 const check = (name, ok, detail = '') => {
@@ -65,8 +65,8 @@ const MOCK = `
     }
   }
   window.dbxPlugin = {
-    ready: Promise.resolve({ pluginId: 'com.csisolar.ebook' }),
-    context: { pluginId: 'com.csisolar.ebook' },
+    ready: Promise.resolve({ pluginId: 'com.mjj3610.ebook' }),
+    context: { pluginId: 'com.mjj3610.ebook' },
     locale: 'zh-CN',
     theme: { appearance: 'light', tokens: {} },
     request: async () => ({ ok: true }),

@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	pluginID      = "com.csisolar.ebook"
-	pluginVersion = "1.2.0"
+	pluginID      = "com.mjj3610.ebook"
+	pluginVersion = "1.2.1"
 	libraryFile   = "library.json"
 	booksDirName  = "books"
 	configFile    = "config.json"

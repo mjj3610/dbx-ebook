@@ -27,8 +27,8 @@ function mockBridge(appearance, locale) {
   return `
     window.__hostCalls = []
     window.dbxPlugin = {
-      ready: Promise.resolve({ pluginId: 'com.csisolar.ebook' }),
-      context: { pluginId: 'com.csisolar.ebook' },
+      ready: Promise.resolve({ pluginId: 'com.mjj3610.ebook' }),
+      context: { pluginId: 'com.mjj3610.ebook' },
       locale: ${JSON.stringify(locale)},
       theme: { appearance: ${JSON.stringify(appearance)}, tokens: {} },
       request: async (method, params) => {

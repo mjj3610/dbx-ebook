@@ -14,7 +14,7 @@
     "host.network:https://libretranslate.com:443",
     "host.network:https://dav.jianguoyun.com:443"
   ],
-  "source": "https://github.com/mjj3610/dbx-ebook/tree/v1.2.0",
+  "source": "https://github.com/mjj3610/dbx-ebook/tree/v1.2.1",
   "homepage": "https://github.com/mjj3610/dbx-ebook",
   "license": "GPL-3.0-or-later",
   "releaseNotes": "First public release: 18 book formats, paged/double-page/scrolling layouts, text-to-speech, translation, highlights and notes, real on-disk library via native sidecar, in-app folder picker for the library location.",

@@ -79,7 +79,7 @@ function call(method, params = {}) {
 console.log('\n[1] 握手')
 const init = await call('plugin/initialize', { host: { protocolVersions: [1] } })
 check('initialize 返回协议版本', init?.protocolVersion === 1, JSON.stringify(init))
-check('initialize 回传插件 id', init?.plugin?.id === 'com.csisolar.ebook', JSON.stringify(init?.plugin))
+check('initialize 回传插件 id', init?.plugin?.id === 'com.mjj3610.ebook', JSON.stringify(init?.plugin))
 check('ping 可用', (await call('ping')).ok === true)
 
 console.log('\n[2] 存储描述')
