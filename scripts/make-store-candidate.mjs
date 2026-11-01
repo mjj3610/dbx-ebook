@@ -97,6 +97,17 @@ const icon = /^https?:\/\//.test(storeMeta.icon ?? '')
   ? storeMeta.icon
   : `https://raw.githubusercontent.com/${owner}/${repo}/${tag}/${storeMeta.icon}`
 
+/**
+ * 产物地址：CI 生成的 release-candidates.json 里 url 只有文件名（相对路径），
+ * 商店要求 targets[].url 必须是可直接下载的 https 地址，因此统一补成 Release 资产地址。
+ */
+function resolveArtifactUrl(url) {
+  if (/^https:\/\//.test(url ?? '')) return url
+  const name = String(url ?? '').split('/').pop()
+  if (!name) throw new Error('release-candidates.json 里某个产物的 url 为空')
+  return `https://github.com/${owner}/${repo}/releases/download/${tag}/${name}`
+}
+
 const candidate = {
   schemaVersion: 1,
   id: manifest.id,
@@ -114,7 +125,7 @@ const candidate = {
   localizations: storeMeta.localizations ?? {},
   targets: artifacts.map((artifact) => ({
     target: artifact.target,
-    url: artifact.url,
+    url: resolveArtifactUrl(artifact.url),
     sha256: artifact.sha256,
     size: artifact.size,
   })),
