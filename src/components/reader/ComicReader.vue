@@ -22,6 +22,18 @@
       </div>
       <button class="edge edge-left" @click="prev" />
       <button class="edge edge-right" @click="next" />
+      <button class="pager pager-prev" :disabled="currentPage <= 0" :aria-label="t('reader.prev')" :title="t('reader.prev')" @click.stop="prev">
+        <AppIcon name="chevronLeft" :size="22" />
+      </button>
+      <button
+        class="pager pager-next"
+        :disabled="currentPage >= pages.length - 1"
+        :aria-label="t('reader.next')"
+        :title="t('reader.next')"
+        @click.stop="next"
+      >
+        <AppIcon name="chevronRight" :size="22" />
+      </button>
     </div>
 
     <div class="comic-hint" v-if="settings.mode === 'scroll'">{{ pageLabel }}</div>
@@ -31,6 +43,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { BookDoc, ReaderSettings } from '../../core/types'
+import { t } from '../../i18n'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   doc: BookDoc
@@ -196,5 +210,66 @@ defineExpose({ next, prev, goToPage })
   color: #fff;
   background: rgba(0, 0, 0, 0.42);
   pointer-events: none;
+}
+
+/* 翻页按钮：深色背景上给一个看得见的出口 */
+.pager {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(28, 32, 40, 0.72);
+  color: #fff;
+  cursor: pointer;
+  z-index: 6;
+  transition: opacity 0.16s, background 0.16s, transform 0.12s;
+}
+
+.pager:hover:not(:disabled) {
+  background: rgba(48, 54, 66, 0.9);
+}
+
+.pager:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.pager:focus-visible {
+  outline: 2px solid rgba(120, 160, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.pager:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.pager-prev {
+  left: 12px;
+}
+
+.pager-next {
+  right: 12px;
+}
+
+@media (max-width: 720px) {
+  .pager {
+    width: 34px;
+    height: 34px;
+  }
+
+  .pager-prev {
+    left: 6px;
+  }
+
+  .pager-next {
+    right: 6px;
+  }
 }
 </style>

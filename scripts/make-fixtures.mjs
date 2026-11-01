@@ -195,6 +195,24 @@ for (let i = 1; i <= 3; i += 1) {
 writeFileSync(join(OUT, 'comic.cbz'), await cbz.generateAsync({ type: 'nodebuffer' }))
 
 // ---------- PDF（手写最小合法结构） ----------
+/** 把手写对象体组装成合法 PDF：xref 偏移必须精确，统一在这里算 */
+function assemblePdf(bodies, infoObjectNo) {
+  let pdf = '%PDF-1.4\n'
+  const offsets = [0]
+  bodies.forEach((body, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`
+  })
+  const xrefStart = pdf.length
+  pdf += `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n`
+  for (let i = 1; i <= bodies.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+  }
+  const info = infoObjectNo ? ` /Info ${infoObjectNo} 0 R` : ''
+  pdf += `trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R${info} >>\nstartxref\n${xrefStart}\n%%EOF\n`
+  return Buffer.from(pdf, 'latin1')
+}
+
 const content = `BT /F1 24 Tf 40 700 Td (Sample PDF Book) Tj ET
 BT /F1 14 Tf 40 660 Td (Page one content for reader test.) Tj ET`
 const objects = [
@@ -205,19 +223,29 @@ const objects = [
   '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
 ]
 
-let pdf = '%PDF-1.4\n'
-const offsets = [0]
-objects.forEach((body, index) => {
-  offsets.push(pdf.length)
-  pdf += `${index + 1} 0 obj\n${body}\nendobj\n`
-})
-const xrefStart = pdf.length
-pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-for (let i = 1; i <= objects.length; i += 1) {
-  pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+writeFileSync(join(OUT, 'doc.pdf'), assemblePdf(objects))
+
+// ---------- 多页 PDF（验证单页 / 双页翻页控件与进度） ----------
+const MULTI_PAGES = 6
+const multiBodies = []
+multiBodies[0] = '<< /Type /Catalog /Pages 2 0 R >>'
+const multiKids = []
+for (let i = 0; i < MULTI_PAGES; i += 1) multiKids.push(`${3 + i * 2} 0 R`)
+multiBodies[1] = `<< /Type /Pages /Kids [${multiKids.join(' ')}] /Count ${MULTI_PAGES} >>`
+const multiFontNo = 3 + MULTI_PAGES * 2
+for (let i = 0; i < MULTI_PAGES; i += 1) {
+  const contentNo = 4 + i * 2
+  const text = `BT /F1 34 Tf 60 700 Td (Page ${i + 1} of ${MULTI_PAGES}) Tj ET`
+  multiBodies[2 + i * 2] =
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] ` +
+    `/Resources << /Font << /F1 ${multiFontNo} 0 R >> >> /Contents ${contentNo} 0 R >>`
+  multiBodies[3 + i * 2] = `<< /Length ${text.length} >>\nstream\n${text}\nendstream`
 }
-pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
-writeFileSync(join(OUT, 'doc.pdf'), Buffer.from(pdf, 'latin1'))
+multiBodies[multiFontNo - 1] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+// 故意塞一个 Word 导出风格的旧标题：验证「书名以文件名为准，不被内嵌元数据顶掉」
+const multiInfoNo = multiFontNo + 1
+multiBodies[multiInfoNo - 1] = '<< /Title (Microsoft Word - Legacy Title.docx) /Author (Fixture Author) >>'
+writeFileSync(join(OUT, 'multi.pdf'), assemblePdf(multiBodies, multiInfoNo))
 
 // ---------- 中文 PDF（Type0 + 预定义 CMap，用于验证中文乱码修复） ----------
 // 真实中文 PDF 的典型结构：Type0 复合字体 + /Encoding /UniGB-UCS2-H，
@@ -267,7 +295,7 @@ writeFileSync(join(OUT, 'cn.pdf'), Buffer.from(cnPdf, 'latin1'))
 
 console.log(
   'fixtures ready:',
-  ['novel.txt', 'book.epub', 'comic.cbz', 'doc.pdf', 'cn.pdf'].join(', '),
+  ['novel.txt', 'book.epub', 'comic.cbz', 'doc.pdf', 'multi.pdf', 'cn.pdf'].join(', '),
 )
 
 /* ---------- 编码类样本：验证非 UTF-8 文本不乱码 ---------- */

@@ -114,6 +114,32 @@ function looksMojibake(text: string): boolean {
 }
 
 /**
+ * 整理 PDF 内嵌标题：去掉 Word / WPS 导出时留下的前缀
+ * 这类标题长成 "Microsoft Word - 周报.docx"，直接显示比文件名还难看
+ */
+function cleanMetaTitle(raw: string): string {
+  return raw
+    .replace(/^Microsoft\s+(Word|PowerPoint|Excel)\s*[-–—]\s*/i, '')
+    .replace(/\.(docx?|pptx?|xlsx?|wps|pdf)$/i, '')
+    .trim()
+}
+
+/**
+ * 文件名是否「没有信息量」：scan001.pdf / 未命名.pdf / 纯数字 / 哈希名
+ * 只有这种时候才值得改用 PDF 内嵌标题
+ */
+function isGenericName(name: string): boolean {
+  const text = name.trim()
+  if (!text) return true
+  if (/^\d+$/.test(text)) return true
+  if (/^[0-9a-f]{8,}$/i.test(text)) return true
+  if (/^(?:untitled|document|doc|book|ebook|scan|scanned|image|img|file|new|未命名|无标题|新建|文档|扫描|图片|文件)(?:[\s._-]*\d*)$/i.test(text)) {
+    return true
+  }
+  return false
+}
+
+/**
  * 打开 PDF 文档（解析与阅读器共用）
  *
  * 注意：一旦传入自定义 CMapReaderFactory / StandardFontDataFactory，
@@ -187,7 +213,11 @@ export async function parsePdf(file: File): Promise<BookDoc> {
 
   const rawTitle = String(info.Title ?? '').trim()
   const rawAuthor = String(info.Author ?? '').trim()
-  const title = rawTitle && !looksMojibake(rawTitle) ? rawTitle : titleFromFilename(file.name)
+  const metaTitle = rawTitle && !looksMojibake(rawTitle) ? cleanMetaTitle(rawTitle) : ''
+  const nameTitle = titleFromFilename(file.name)
+  // 文件名优先：用户在磁盘上看到的是它，突然换成 PDF 里那个（往往是 Word 的旧文档属性）
+  // 标题会让人觉得「导入后名字变了」。只有文件名本身没信息量时才退回内嵌标题。
+  const title = isGenericName(nameTitle) && metaTitle ? metaTitle : nameTitle
   const author = looksMojibake(rawAuthor) ? '' : rawAuthor
 
   // 目录：dest → 页码

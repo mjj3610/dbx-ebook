@@ -1,26 +1,50 @@
 <!-- PDF 阅读器：画布渲染 + 透明文本层（支持选中、翻译、听书），支持单页 / 双页 / 滚动 -->
 <template>
-  <div ref="rootRef" class="pdf-reader" :class="`mode-${settings.mode}`" @mouseup="onMouseUp" @touchend="onMouseUp">
-    <div ref="containerRef" class="pages" :style="{ gap: `${pageGap}px` }">
-      <div
-        v-for="index in visiblePages"
-        :key="index"
-        :ref="(el) => setPageRef(el as HTMLElement | null, index)"
-        class="page-shell"
-        :data-index="index"
-        :style="{ width: `${pageWidth}px`, height: `${pageHeight}px` }"
-      >
-        <div class="page-inner">
-          <canvas class="page-canvas" />
-          <div class="text-layer book" />
-          <div v-if="pageErrors[index]" class="page-error">{{ pageErrors[index] }}</div>
+  <div class="pdf-reader" :class="`mode-${settings.mode}`">
+    <div
+      ref="rootRef"
+      class="pages-viewport"
+      @mouseup="onMouseUp"
+      @touchend="onTouchEnd"
+      @touchstart.passive="onTouchStart"
+    >
+      <div ref="containerRef" class="pages" :style="{ gap: `${pageGap}px` }">
+        <div
+          v-for="index in visiblePages"
+          :key="index"
+          :ref="(el) => setPageRef(el as HTMLElement | null, index)"
+          class="page-shell"
+          :data-index="index"
+          :style="{ width: `${pageWidth}px`, height: `${pageHeight}px` }"
+        >
+          <div class="page-inner">
+            <canvas class="page-canvas" />
+            <div class="text-layer book" />
+            <div v-if="pageErrors[index]" class="page-error">{{ pageErrors[index] }}</div>
+          </div>
+          <span class="page-no">{{ index + 1 }}</span>
         </div>
-        <span class="page-no">{{ index + 1 }}</span>
       </div>
+
+      <!-- 整个文档打不开时的显式提示，避免只剩一片空白 -->
+      <div v-if="docError" class="doc-error">{{ docError }}</div>
     </div>
 
-    <!-- 整个文档打不开时的显式提示，避免只剩一片空白 -->
-    <div v-if="docError" class="doc-error">{{ docError }}</div>
+    <!-- 翻页：分页模式下给出看得见的入口，滚动模式靠滚轮/触控板 -->
+    <template v-if="settings.mode !== 'scroll' && pageCount > 1">
+      <button class="pager pager-prev" :disabled="currentPage <= 0" :aria-label="t('reader.prev')" :title="t('reader.prev')" @click.stop="prev">
+        <AppIcon name="chevronLeft" :size="22" />
+      </button>
+      <button
+        class="pager pager-next"
+        :disabled="currentPage >= pageCount - 1"
+        :aria-label="t('reader.next')"
+        :title="t('reader.next')"
+        @click.stop="next"
+      >
+        <AppIcon name="chevronRight" :size="22" />
+      </button>
+    </template>
   </div>
 </template>
 
@@ -31,6 +55,7 @@ import { openPdfDocument } from '../../core/parsers/pdf'
 import { wrapQuote, readSelection } from '../../core/render'
 import type { BookDoc, NoteRecord, ReaderSettings } from '../../core/types'
 import { t } from '../../i18n'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   doc: BookDoc
@@ -47,13 +72,20 @@ const emit = defineEmits<{
   (event: 'loaded', payload: { pageCount: number }): void
 }>()
 
-/** 页面间距 px */
+/** 页面间距 px（与 .pages 的 gap 保持一致） */
 const pageGap = 16
+/** .pages 的左右内边距 px（与 CSS `padding: 20px 24px 48px` 保持一致） */
+const PAGE_PADDING_X = 24
 /** 基础渲染宽度比例（配合 zoom 缩放） */
 const BASE_SCALE = 1.35
 
 const rootRef = ref<HTMLElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
+/**
+ * 视口宽度。必须做成响应式：直接读 rootRef.clientWidth 不是响应式的，
+ * 窗口缩放后 perView / pageWidth 都不会重算，双页会一直停在初始判定上。
+ */
+const viewportWidth = ref(0)
 const pageRefs = new Map<number, HTMLElement>()
 const renderedPages = new Set<number>()
 
@@ -70,9 +102,25 @@ const pageErrors = ref<Record<number, string>>({})
 const docError = ref('')
 
 let observer: IntersectionObserver | null = null
+let resizeObserver: ResizeObserver | null = null
 
-/** 双页模式在窄屏降级 */
-const perView = computed(() => (props.settings.mode === 'double' && pageWidth.value * 2 + pageGap < (rootRef.value?.clientWidth ?? 0) ? 2 : 1))
+/** 双页模式每页至少要有这么宽，否则退回单页 */
+const MIN_DOUBLE_PAGE_WIDTH = 320
+
+/** 双页时两页加上间距与左右内边距后需要占的总宽 */
+const DOUBLE_MIN_TOTAL = MIN_DOUBLE_PAGE_WIDTH * 2 + pageGap + PAGE_PADDING_X * 2
+
+/**
+ * 双页模式在窄屏降级
+ * 注意：不能用 pageWidth 判断 —— pageWidth 是按 perView 算出来的，二者互相依赖，
+ * 结果就是「按单页算宽 → 两页放不下 → 退回单页」永远成立，双页形同摆设。
+ * 这里只看容器宽度。
+ */
+const perView = computed(() => {
+  if (props.settings.mode !== 'double') return 1
+  if (!viewportWidth.value) return 1
+  return viewportWidth.value >= DOUBLE_MIN_TOTAL ? 2 : 1
+})
 
 /** 当前可见页集合 */
 const visiblePages = computed<number[]>(() => {
@@ -83,14 +131,25 @@ const visiblePages = computed<number[]>(() => {
   return perView.value === 2 ? [start, start + 1].filter((index) => index < pageCount.value) : [start]
 })
 
-/** 记录页面节点 */
+/** 记录页面节点；翻页后旧节点要清掉，否则会渲染到已经脱离文档的 canvas 上 */
 function setPageRef(el: HTMLElement | null, index: number): void {
-  if (!el) return
-  pageRefs.set(index, el)
+  if (el) pageRefs.set(index, el)
+  else pageRefs.delete(index)
 }
 
 /** 载入文档 */
 onMounted(async () => {
+  // 先接管视口尺寸：perView 与页面宽度都依赖它，晚一步就会按 0 处理一次
+  if (rootRef.value) {
+    viewportWidth.value = rootRef.value.clientWidth
+    resizeObserver = new ResizeObserver((entries) => {
+      const width = Math.round(entries[0]?.contentRect.width ?? rootRef.value?.clientWidth ?? 0)
+      // 竖向滚动条出现/消失会造成 1px 抖动，忽略掉避免反复重绘
+      if (Math.abs(width - viewportWidth.value) < 2) return
+      viewportWidth.value = width
+    })
+    resizeObserver.observe(rootRef.value)
+  }
   if (!props.doc.pdfData) return
   try {
     const doc = await openPdfDocument(props.doc.pdfData)
@@ -116,8 +175,11 @@ async function computePageSize(): Promise<void> {
   if (!doc) return
   const page = await doc.getPage(1)
   const baseViewport = page.getViewport({ scale: 1 })
-  const containerWidth = rootRef.value?.clientWidth ?? 900
-  const available = perView.value === 2 ? (containerWidth - pageGap * 3) / 2 : containerWidth - 48
+  const containerWidth = viewportWidth.value || rootRef.value?.clientWidth || 900
+  // 双页时必须把「间距 + 左右内边距」一起从可用宽度里扣掉，否则两页总宽会超出视口，
+  // flex 换行会把第 2 页挤到下一行 —— 看起来就像双页模式只渲染了一页。
+  const usable = containerWidth - PAGE_PADDING_X * 2
+  const available = perView.value === 2 ? (usable - pageGap) / 2 : usable
   const targetWidth = Math.max(240, Math.min(available, baseViewport.width * BASE_SCALE))
   const scale = (targetWidth / baseViewport.width) * props.zoom
   const viewport = page.getViewport({ scale })
@@ -301,6 +363,30 @@ function prev(): void {
   void goToPage(currentPage.value - perView.value)
 }
 
+/** 触屏左右滑动翻页（移动端没有键盘，也不方便找按钮） */
+let touchStart: { x: number; y: number } | null = null
+
+function onTouchStart(event: TouchEvent): void {
+  const touch = event.touches[0]
+  touchStart = touch ? { x: touch.clientX, y: touch.clientY } : null
+}
+
+function onTouchEnd(event: TouchEvent): void {
+  const start = touchStart
+  touchStart = null
+  // 触摸结束时也要处理文本选区
+  onMouseUp()
+  if (!start || props.settings.mode === 'scroll') return
+  const touch = event.changedTouches[0]
+  if (!touch) return
+  const dx = touch.clientX - start.x
+  const dy = touch.clientY - start.y
+  // 横向意图明显才翻页，避免和长按选词打架
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+  if (dx < 0) next()
+  else prev()
+}
+
 /** 选中文本 */
 function onMouseUp(): void {
   requestAnimationFrame(() => {
@@ -332,20 +418,25 @@ function getParagraphs(): string[] {
   return pageTexts.value.get(currentPage.value) ?? []
 }
 
+/** 尺寸/排版变化后重算页面并重绘 */
+async function relayout(): Promise<void> {
+  if (!pdfDoc.value) return
+  await nextTick()
+  await computePageSize()
+  renderedPages.clear()
+  pageRefs.forEach((el) => {
+    const layer = el.querySelector('.text-layer')
+    if (layer) layer.innerHTML = ''
+  })
+  await nextTick()
+  await renderVisible()
+}
+
 // 缩放或排版变化：重新计算尺寸并重绘
-watch(
-  () => [props.zoom, props.settings.mode, props.settings.theme],
-  async () => {
-    await nextTick()
-    await computePageSize()
-    renderedPages.clear()
-    pageRefs.forEach((el, index) => {
-      const layer = el.querySelector('.text-layer')
-      if (layer) layer.innerHTML = ''
-    })
-    await renderVisible()
-  },
-)
+watch(() => [props.zoom, props.settings.mode, props.settings.theme], relayout)
+
+// 视口宽度变化：双页判定与页面宽度都要跟着变
+watch(viewportWidth, relayout)
 
 // 笔记变化：重绘高亮
 watch(
@@ -370,6 +461,8 @@ watch(
 onBeforeUnmount(() => {
   observer?.disconnect()
   observer = null
+  resizeObserver?.disconnect()
+  resizeObserver = null
   pageRefs.clear()
   renderedPages.clear()
   pdfDoc.value?.destroy().catch(() => undefined)
@@ -380,14 +473,22 @@ defineExpose({ next, prev, goToPage, markSpeech, getParagraphs })
 
 <style scoped>
 .pdf-reader {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: #e9ecf1;
+}
+
+.pages-viewport {
   height: 100%;
   overflow: auto;
-  background: #e9ecf1;
 }
 
 .pages {
   display: flex;
-  flex-wrap: wrap;
+  /* 分页模式最多两页并排，绝不能换行 —— 一换行第 2 页就跑到下一屏，
+     用户看到的就是「双页只显示一页」。宽度不够时宁可横向滚动。 */
+  flex-wrap: nowrap;
   justify-content: center;
   padding: 20px 24px 48px;
 }
@@ -459,6 +560,69 @@ defineExpose({ next, prev, goToPage, markSpeech, getParagraphs })
   color: rgba(31, 35, 41, 0.32);
   pointer-events: none;
   z-index: 2;
+}
+
+/* 翻页按钮：分页模式下必须看得见，否则用户不知道能翻页 */
+.pager {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(20, 24, 32, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: #2b3038;
+  box-shadow: 0 2px 12px rgba(20, 24, 32, 0.16);
+  cursor: pointer;
+  z-index: 6;
+  transition: opacity 0.16s, box-shadow 0.16s, transform 0.12s;
+}
+
+.pager:hover:not(:disabled) {
+  box-shadow: 0 4px 18px rgba(20, 24, 32, 0.24);
+}
+
+.pager:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.pager:focus-visible {
+  outline: 2px solid rgba(79, 124, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.pager:disabled {
+  opacity: 0.2;
+  cursor: default;
+  box-shadow: none;
+}
+
+.pager-prev {
+  left: 12px;
+}
+
+.pager-next {
+  right: 12px;
+}
+
+@media (max-width: 720px) {
+  .pager {
+    width: 34px;
+    height: 34px;
+  }
+
+  .pager-prev {
+    left: 6px;
+  }
+
+  .pager-next {
+    right: 6px;
+  }
 }
 
 /* 单页渲染失败：明确告诉用户哪一页、为什么，而不是留白 */

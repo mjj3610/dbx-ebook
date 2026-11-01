@@ -58,6 +58,7 @@ await dropFiles([
   'book.epub',
   'comic.cbz',
   'doc.pdf',
+  'multi.pdf',
   'cn.pdf',
   'gbk-txt.txt',
   'gbk-epub.epub',
@@ -67,7 +68,7 @@ await dropFiles([
 await page.waitForSelector('.card', { timeout: 20000 })
 await page.waitForTimeout(1500)
 const cardCount = await page.locator('.card').count()
-check('导入 9 本书', cardCount === 9, `实际 ${cardCount}`)
+check('导入 10 本书', cardCount === 10, `实际 ${cardCount}`)
 
 /** 打开指定书籍 */
 async function openBook(title) {
@@ -202,6 +203,79 @@ const cnText = await page.evaluate(() => document.querySelector('.text-layer')?.
 check('中文 PDF 文本层无乱码', cnText.includes('电子书阅读器'), JSON.stringify(cnText.slice(0, 30)))
 check('中文标点正确', cnText.includes('《测试》'), JSON.stringify(cnText.slice(0, 60)))
 check('文本层不含替换符', !/[\uFFFD]/.test(cnText), cnText.slice(0, 30))
+
+console.log('\n[6c] PDF 翻页控件')
+await backToShelf()
+// multi.pdf 内嵌了 Word 风格的旧标题（Microsoft Word - Legacy Title.docx），书名必须仍取文件名
+const multiCardTitle = (await page.locator('.card', { hasText: 'multi' }).first().locator('.meta h3').innerText().catch(() => '')).trim()
+check('PDF 书名取文件名而非内嵌元数据', multiCardTitle === 'multi', multiCardTitle || '(读不到卡片标题)')
+await openBook('multi')
+/** 从底部进度读当前页 */
+const readPageNo = async () => {
+  const text = await page.locator('.labels').innerText()
+  const matched = /(\d+)\s*\/\s*(\d+)/.exec(text)
+  return matched ? Number(matched[1]) : Number.NaN
+}
+check('分页模式出现左右翻页按钮', (await page.locator('.pager-next').isVisible()) && (await page.locator('.pager-prev').isVisible()))
+check('首屏「上一页」按钮禁用', await page.locator('.pager-prev').isDisabled())
+const pageStart = await readPageNo()
+await page.locator('.pager-next').click()
+await page.waitForTimeout(900)
+const pageAfterNext = await readPageNo()
+check('单页模式点「下一页」前进 1 页', pageAfterNext === pageStart + 1, `${pageStart} -> ${pageAfterNext}`)
+await page.locator('.pager-prev').click()
+await page.waitForTimeout(900)
+check('点「上一页」回到原页', (await readPageNo()) === pageStart, `当前 ${await readPageNo()}`)
+
+await page.locator('.right .icon-btn').nth(3).click()
+await page.waitForTimeout(400)
+await page.locator('.segmented button', { hasText: '双页' }).click()
+await page.waitForTimeout(700)
+// 设置面板会盖住右侧翻页按钮，先关掉再点
+await page.locator('.panel .icon-btn').last().click()
+await page.waitForTimeout(600)
+// 双页不能只多出一个空壳：两页要真的并排在同一行，且各自的画布都画出了内容
+const doubleLayout = await page.evaluate(() => {
+  const viewport = document.querySelector('.pages-viewport')
+  const boxes = Array.from(document.querySelectorAll('.page-shell')).map((el) => el.getBoundingClientRect())
+  const canvases = Array.from(document.querySelectorAll('.page-canvas')).map((el) => el.width)
+  return {
+    count: boxes.length,
+    tops: boxes.map((box) => Math.round(box.top)),
+    lefts: boxes.map((box) => Math.round(box.left)),
+    right: boxes.length ? Math.round(boxes[boxes.length - 1].right) : 0,
+    viewportWidth: viewport ? Math.round(viewport.clientWidth) : 0,
+    canvases,
+  }
+})
+check('双页模式并排显示 2 页', doubleLayout.count === 2, `shells=${doubleLayout.count}`)
+check(
+  '第 2 页未换行到下一行',
+  doubleLayout.tops.length === 2 && doubleLayout.tops[0] === doubleLayout.tops[1],
+  `tops=${doubleLayout.tops.join(',')}`,
+)
+check(
+  '两页横坐标不同且都在视口内',
+  doubleLayout.lefts.length === 2 &&
+    doubleLayout.lefts[0] !== doubleLayout.lefts[1] &&
+    doubleLayout.right <= doubleLayout.viewportWidth + 1,
+  `lefts=${doubleLayout.lefts.join(',')} right=${doubleLayout.right} 视口=${doubleLayout.viewportWidth}`,
+)
+check(
+  '两页画布都已绘制',
+  doubleLayout.canvases.length === 2 && doubleLayout.canvases.every((width) => width > 0),
+  `canvas 宽=${doubleLayout.canvases.join(',')}`,
+)
+await page.locator('.pager-next').click()
+await page.waitForTimeout(1000)
+const pageDouble = await readPageNo()
+check('双页模式点「下一页」前进 2 页', pageDouble >= pageStart + 2, `${pageStart} -> ${pageDouble}`)
+await page.locator('.right .icon-btn').nth(3).click()
+await page.waitForTimeout(400)
+await page.locator('.segmented button', { hasText: '单页' }).click()
+await page.waitForTimeout(600)
+await page.locator('.panel .icon-btn').last().click()
+await page.waitForTimeout(400)
 
 console.log('\n[7] 漫画')
 await backToShelf()

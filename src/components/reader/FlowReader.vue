@@ -6,6 +6,12 @@
       <div ref="hostRef" class="page-host" :style="hostStyle" />
       <button class="edge edge-left" :aria-label="t('reader.prev')" @click="prev" />
       <button class="edge edge-right" :aria-label="t('reader.next')" @click="next" />
+      <button class="pager pager-prev" :disabled="atStart" :aria-label="t('reader.prev')" :title="t('reader.prev')" @click.stop="prev">
+        <AppIcon name="chevronLeft" :size="20" />
+      </button>
+      <button class="pager pager-next" :disabled="atEnd" :aria-label="t('reader.next')" :title="t('reader.next')" @click.stop="next">
+        <AppIcon name="chevronRight" :size="20" />
+      </button>
     </div>
 
     <!-- 滚动模式 -->
@@ -37,6 +43,7 @@ import {
 } from '../../core/render'
 import type { BookDoc, NoteRecord, ReaderSettings } from '../../core/types'
 import { t } from '../../i18n'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   doc: BookDoc
@@ -213,6 +220,10 @@ function currentShadow(): ShadowRoot | null {
   }
   return hostRef.value?.shadowRoot ?? null
 }
+
+/** 是否已到全书首 / 末页（用于禁用翻页按钮） */
+const atStart = computed(() => chapterIndex.value <= 0 && page.value <= 0)
+const atEnd = computed(() => chapterIndex.value >= props.doc.chapters.length - 1 && page.value >= pageCount.value - 1)
 
 /** 下一页 */
 function next(): void {
@@ -495,6 +506,55 @@ defineExpose({ next, prev, goToChapter, markSpeech, getParagraphs, chapterTextLe
 .edge-right {
   right: 0;
   cursor: e-resize;
+}
+
+/* 翻页按钮：边缘点击区是隐形的，必须再给一个看得见的入口 */
+.pager {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--c-border, rgba(20, 24, 32, 0.12));
+  border-radius: 50%;
+  background: var(--c-panel, #fff);
+  color: var(--c-text-2, #5c6470);
+  box-shadow: var(--shadow-s, 0 2px 10px rgba(20, 24, 32, 0.1));
+  cursor: pointer;
+  z-index: 3;
+  transition: opacity 0.16s, color 0.16s, box-shadow 0.16s, transform 0.12s;
+}
+
+.pager:hover:not(:disabled) {
+  color: var(--c-text, #1f2329);
+  box-shadow: var(--shadow-m, 0 4px 16px rgba(20, 24, 32, 0.16));
+}
+
+.pager:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.pager:focus-visible {
+  outline: 2px solid var(--c-accent, #4f7cff);
+  outline-offset: 2px;
+}
+
+.pager:disabled {
+  opacity: 0.25;
+  cursor: default;
+  box-shadow: none;
+}
+
+.pager-prev {
+  left: 6px;
+}
+
+.pager-next {
+  right: 6px;
 }
 
 @media (max-width: 720px) {

@@ -276,7 +276,8 @@ export async function hashBlob(blob: Blob): Promise<string> {
 
 /** 从文件名提取书名（去扩展名） */
 export function titleFromFilename(filename: string): string {
-  return filename.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || '未命名书籍'
+  // 只去扩展名与首尾空白：用户认的是磁盘上那个名字，任何改写都会让人觉得「导入后名字变了」
+  return filename.replace(/\.[^.]+$/, '').trim() || '未命名书籍'
 }
 
 /** 取出扩展名（小写，不含点） */
