@@ -5,7 +5,7 @@
  */
 import JSZip from 'jszip'
 import type { BookDoc, Chapter, TocItem } from '../types'
-import { blobToDataUrl, htmlToText, sanitizeHtml, titleFromFilename, uid } from '../utils'
+import { blobToDataUrl, htmlToText, titleFromFilename, uid } from '../utils'
 import {
   indexZip,
   isImagePath,
@@ -161,7 +161,8 @@ export async function parseEpub(file: File): Promise<BookDoc> {
     await rewriteResources(body, item.path, toUrl)
     body.querySelectorAll('script, iframe, object, embed, noscript').forEach((el) => el.remove())
 
-    const innerHtml = sanitizeHtml(body.innerHTML)
+    // 安全过滤统一在 mountChapter 收口，这里只要内容，不再重复消毒
+    const innerHtml = body.innerHTML
     const plainText = htmlToText(innerHtml).replace(/\s+/g, ' ').trim()
     if (!plainText && !/<img/i.test(innerHtml)) continue
 

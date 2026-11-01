@@ -107,6 +107,49 @@ for (let index = 0; index < LONG_PARAGRAPHS; index += 1) {
 }
 writeFileSync(join(OUT, 'long.txt'), longLines.join('\n'), 'utf-8')
 
+// ---------- 恶意样本（安全回归） ----------
+// 电子书来自外部、不可信，这两个样本专门用来证明「脚本进不来」。
+// 所有 payload 都往 window.__pwned 写标记，只要有一条执行成功就能被断言抓到。
+const evilHtml = `<!DOCTYPE html>
+<html><head>
+<meta http-equiv="refresh" content="0;url=javascript:window.__pwned='meta'">
+<link rel="stylesheet" href="javascript:window.__pwned='link'">
+<style>body{background:url("javascript:window.__pwned='style'")}</style>
+<script>window.__pwned = 'script'</script>
+</head><body>
+<h1>安全样本标题</h1>
+<p>这段正文必须保留：PAYLOAD-MARKER</p>
+<img src="x" onerror="window.__pwned='onerror'">
+<img src="data:text/html;base64,PHNjcmlwdD53aW5kb3cuX19wd25lZD0nZGF0YSc8L3NjcmlwdD4=">
+<a href="javascript:window.__pwned='href'">js链接</a>
+<a href="java&#115;cript:window.__pwned='entity'">实体混淆</a>
+<a href="  jav&#x09;ascript:window.__pwned='tab'">制表符混淆</a>
+<a href="https://example.com/ok">正常外链</a>
+<iframe srcdoc="<script>window.__pwned='srcdoc'</script>"></iframe>
+<svg onload="window.__pwned='svgload'"><image xlink:href="javascript:window.__pwned='xlink'" /></svg>
+<svg><foreignObject><img src=x onerror="window.__pwned='foreign'"></foreignObject></svg>
+<form action="javascript:window.__pwned='form'"><button formaction="javascript:window.__pwned='formaction'">提交</button></form>
+<div style="background:url(javascript:window.__pwned='inline')">内联样式</div>
+<object data="javascript:window.__pwned='object'"></object>
+<embed src="javascript:window.__pwned='embed'">
+<p onclick="window.__pwned='click'">点击我</p>
+</body></html>
+`
+writeFileSync(join(OUT, 'evil-html.html'), evilHtml, 'utf-8')
+
+const evilMd = [
+  '# 恶意 Markdown',
+  '',
+  '这段正文必须保留：PAYLOAD-MARKER',
+  '',
+  '1. [js 链接](javascript:window.__pwned=\'md\')',
+  '2. [大小写混淆](JaVaScRiPt:window.__pwned=\'case\')',
+  '3. [正常链接](https://example.com/ok)',
+  '',
+  '<img src=x onerror="window.__pwned=\'mdhtml\'">',
+].join('\n')
+writeFileSync(join(OUT, 'evil-md.md'), evilMd, 'utf-8')
+
 // ---------- EPUB ----------
 const zip = new JSZip()
 zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' })

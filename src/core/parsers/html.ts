@@ -3,7 +3,7 @@
  */
 import type { BookDoc, Chapter } from '../types'
 import { makeChapterFromHtml } from '../chapterize'
-import { decodeMarkup, escapeHtml, sanitizeHtml, titleFromFilename } from '../utils'
+import { decodeMarkup, escapeHtml, titleFromFilename } from '../utils'
 
 /** 从完整 HTML 文档中提取标题与正文节点 */
 function parseDocument(source: string): Document {
@@ -33,9 +33,9 @@ export async function parseHtml(file: File): Promise<BookDoc> {
     const html = buffer.join('').trim()
     buffer = []
     if (!html) return
-    const safe = sanitizeHtml(html)
-    if (!safe.replace(/<[^>]+>/g, '').trim() && !/<img/i.test(safe)) return
-    chapters.push(makeChapterFromHtml(safe, currentTitle, chapters.length))
+    // 安全过滤统一在 mountChapter 收口
+    if (!html.replace(/<[^>]+>/g, '').trim() && !/<img/i.test(html)) return
+    chapters.push(makeChapterFromHtml(html, currentTitle, chapters.length))
   }
 
   Array.from(body.childNodes).forEach((node) => {

@@ -6,6 +6,7 @@
  * - 选中文本偏移计算
  */
 import { FONT_FAMILIES, NOTE_COLORS, THEMES } from './constants'
+import { sanitizeBookHtml } from './sanitize'
 import type { Chapter, NoteRecord, ReaderSettings } from './types'
 
 /** 排版 CSS 变量名，供阅读器动态调整 */
@@ -89,7 +90,8 @@ export function mountChapter(host: HTMLElement, chapter: Chapter | null, cssText
   const container = (root.querySelector('.book') as HTMLElement) ?? document.createElement('div')
   container.className = 'book'
   if (!container.parentNode) root.appendChild(container)
-  container.innerHTML = chapter?.html ?? ''
+  // 唯一注入点：所有格式的正文都在这里落地，因此消毒收口于此（见 sanitize.ts 的说明）
+  container.innerHTML = sanitizeBookHtml(chapter?.html ?? '')
 
   // 为块级元素编号，便于听书高亮定位
   let blockIndex = 0

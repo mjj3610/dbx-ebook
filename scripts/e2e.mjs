@@ -65,11 +65,13 @@ await dropFiles([
   'ru.fb2',
   'cp936.rtf',
   'long.txt',
+  'evil-html.html',
+  'evil-md.md',
 ])
 await page.waitForSelector('.card', { timeout: 20000 })
 await page.waitForTimeout(1500)
 const cardCount = await page.locator('.card').count()
-check('导入 11 本书', cardCount === 11, `实际 ${cardCount}`)
+check('导入 13 本书', cardCount === 13, `实际 ${cardCount}`)
 
 /** 打开指定书籍 */
 async function openBook(title) {
@@ -251,6 +253,49 @@ const lastPage = await flowMetrics()
 check('末页禁用下一页', lastPage.nextDisabled, lastPage.labels)
 check('末页纸面仍在阅读区内', lastPage.inStage)
 check('末页仍有正文（不是甩出屏幕的空白）', lastPage.visibleCount > 0, `visible=${lastPage.visibleCount}`)
+
+console.log('\n[4d] 恶意电子书：脚本不得进入 Shadow DOM')
+/** 检查正文里是否残留任何可执行面 */
+const inspectInjection = () =>
+  page.evaluate(() => {
+    const root = document.querySelector('.page-host')?.shadowRoot
+    const container = root?.querySelector('.book')
+    if (!container) return null
+    const onAttrs = []
+    const badUrls = []
+    const dangerous = []
+    for (const el of Array.from(container.querySelectorAll('*'))) {
+      const tag = el.tagName.toLowerCase()
+      if (['script', 'iframe', 'object', 'embed', 'form', 'button', 'input', 'link', 'meta', 'foreignobject'].includes(tag)) {
+        dangerous.push(tag)
+      }
+      for (const attr of Array.from(el.attributes)) {
+        const name = attr.name.toLowerCase()
+        const value = attr.value.replace(/[\u0000-\u0020]+/g, '').toLowerCase()
+        if (name.startsWith('on')) onAttrs.push(`${tag}[${name}]`)
+        if (name === 'srcdoc' || name === 'formaction' || name === 'action') badUrls.push(`${tag}[${name}]`)
+        if ((name === 'href' || name === 'xlink:href' || name === 'src') && /^(javascript|vbscript):/.test(value)) {
+          badUrls.push(`${tag}[${name}]=${value.slice(0, 24)}`)
+        }
+        if (name === 'src' && value.startsWith('data:') && !value.startsWith('data:image/')) badUrls.push(`${tag}[src]=data:非图片`)
+      }
+    }
+    return { onAttrs, badUrls, dangerous, text: (container.textContent ?? '').replace(/\s+/g, ' ').trim() }
+  })
+
+for (const title of ['evil-html', 'evil-md']) {
+  await backToShelf()
+  await page.locator('.card', { hasText: title }).first().click()
+  await page.waitForSelector('.reader', { timeout: 10000 })
+  await page.waitForTimeout(1200)
+  const report = await inspectInjection()
+  const pwned = await page.evaluate(() => window.__pwned ?? null)
+  check(`${title}：没有脚本被执行`, pwned === null, `__pwned=${pwned}`)
+  check(`${title}：没有事件属性残留`, report !== null && report.onAttrs.length === 0, report?.onAttrs.join(','))
+  check(`${title}：没有 javascript:/srcdoc/formaction`, report !== null && report.badUrls.length === 0, report?.badUrls.join(','))
+  check(`${title}：没有危险标签残留`, report !== null && report.dangerous.length === 0, report?.dangerous.join(','))
+  check(`${title}：正文没有被误删`, Boolean(report?.text.includes('PAYLOAD-MARKER')), report?.text.slice(0, 60))
+}
 
 console.log('\n[5] EPUB')
 await backToShelf()

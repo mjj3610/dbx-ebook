@@ -30,31 +30,6 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;')
 }
 
-/**
- * HTML 净化：移除脚本、事件属性、iframe/object 等危险节点
- * 仅用于让不受信任的电子书内容安全地进入 Shadow DOM
- */
-export function sanitizeHtml(html: string): string {
-  if (!html) return ''
-  const template = document.createElement('template')
-  template.innerHTML = html
-  const blocked = ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'frame', 'frameset']
-  for (const tag of blocked) {
-    template.content.querySelectorAll(tag).forEach((el) => el.remove())
-  }
-  // 移除内联事件与 javascript: 协议
-  template.content.querySelectorAll('*').forEach((el) => {
-    for (const attr of Array.from(el.attributes)) {
-      const name = attr.name.toLowerCase()
-      const value = attr.value.trim().toLowerCase()
-      if (name.startsWith('on')) el.removeAttribute(attr.name)
-      else if ((name === 'href' || name === 'src') && value.startsWith('javascript:')) {
-        el.removeAttribute(attr.name)
-      }
-    }
-  })
-  return template.innerHTML
-}
 
 /** Blob/File 转 dataURL */
 export function blobToDataUrl(blob: Blob): Promise<string> {
