@@ -94,6 +94,62 @@ class InlineStandardFontDataFactory {
 export type PdfDocument = Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>
 
 /**
+ * PDFDocEncoding 在 0x80–0xA0 这一段不是 Latin-1，而是一批标点/连字。
+ * pdf.js 按它解码后，原本的字节被换成了这些字符（0x91 变成 ‚、0x8A 变成 −），
+ * 想还原 UTF-8 就必须先按这张表换回原始字节。
+ */
+const PDFDOC_SPECIAL_BYTES: Record<string, number> = {
+  '\u02d8': 0x18, '\u02c7': 0x19, '\u02c6': 0x1a, '\u02d9': 0x1b,
+  '\u02dd': 0x1c, '\u02db': 0x1d, '\u02da': 0x1e, '\u02dc': 0x1f,
+  '\u2022': 0x80, '\u2020': 0x81, '\u2021': 0x82, '\u2026': 0x83,
+  '\u2014': 0x84, '\u2013': 0x85, '\u0192': 0x86, '\u2044': 0x87,
+  '\u2039': 0x88, '\u203a': 0x89, '\u2212': 0x8a, '\u2030': 0x8b,
+  '\u201e': 0x8c, '\u201c': 0x8d, '\u201d': 0x8e, '\u2018': 0x8f,
+  '\u2019': 0x90, '\u201a': 0x91, '\u2122': 0x92, '\ufb01': 0x93,
+  '\ufb02': 0x94, '\u0141': 0x95, '\u0152': 0x96, '\u0160': 0x97,
+  '\u0178': 0x98, '\u017d': 0x99, '\u0130': 0x9a, '\u0142': 0x9b,
+  '\u0153': 0x9c, '\u0161': 0x9d, '\u017e': 0x9e, '\u20ac': 0xa0,
+}
+
+/** 把「按 PDFDocEncoding 解出来的字符串」换回原始字节；有无法映射的字符就返回 null */
+function pdfDocBytes(text: string): Uint8Array | null {
+  const out: number[] = []
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code <= 0xff) {
+      out.push(code)
+      continue
+    }
+    const mapped = PDFDOC_SPECIAL_BYTES[ch]
+    if (mapped === undefined) return null
+    out.push(mapped)
+  }
+  return Uint8Array.from(out)
+}
+
+/**
+ * 试着把「UTF-8 字节被当成单字节编码解码」的乱码还原回来
+ *
+ * 典型形态：`å‚¨æ−¥`（其实是「宿迁」的 UTF-8 字节被按 PDFDocEncoding 解码）。
+ * 做法是把字符串换回原始字节再按 UTF-8 严格解码：解码成功且结果更像正常文本
+ * 才采用，否则原样返回 —— 正常文字（包括西文重音符）不会被改动。
+ */
+function repairMojibake(text: string): string {
+  if (!text) return text
+  const bytes = pdfDocBytes(text)
+  if (!bytes) return text
+  try {
+    // fatal 让非法序列直接抛错，避免把正常文字改成替换符
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    const looksBetter =
+      /[\u3000-\u9fff\uac00-\ud7af]/.test(decoded) || !/[\u0080-\u00ff]/.test(decoded)
+    return looksBetter ? decoded : text
+  } catch {
+    return text
+  }
+}
+
+/**
  * 判断一段文字看起来是不是「乱码」
  *
  * PDF 字符串按 PDFDocEncoding 解码，而不少国产工具（老版 Word、WPS、若干
@@ -249,16 +305,31 @@ function isPrivateUseCode(code: number): boolean {
  * 判据：pdf.js 给内嵌字体分配的字形码应当落在私用区；一旦某个字形既不在
  * 私用区、又与它自己的 Unicode 不一致，说明 pdf.js 没拿到映射、退回了原始
  * CID —— 那个码位会被当成普通汉字画出来，于是「每字都错成另一个字」。
- * 这类字形占比超过 10% 就认定需要兼容模式。
+ *
+ * 坏字体是按「字体」坏的，而一份文件的不同页会用到不同字体子集：封面用标题
+ * 字体、内页表格用另一套。只看第 1 页会漏掉「封面正常、内页全花」的文件，
+ * 所以这里抽样首页、中段、末页，任一页可疑率超过 10% 就切兼容模式。
  */
-export async function detectFontMappingIssue(doc: PdfDocument): Promise<boolean> {
+const DETECT_MIN_GLYPHS = 8
+const DETECT_SUSPECT_RATIO = 0.1
+
+/** 抽样页号：前 2 页 + 中段 + 末页（去重、排序，跳过越界） */
+function samplePageNumbers(numPages: number): number[] {
+  const wanted = [1, 2, Math.ceil(numPages / 2), numPages - 1]
+  const set = new Set(wanted.filter((n) => n >= 1 && n <= numPages))
+  return [...set].sort((a, b) => a - b)
+}
+
+async function countPageGlyphMapping(doc: PdfDocument, pageNo: number): Promise<{ total: number; suspect: number }> {
+  const page = await doc.getPage(pageNo)
   try {
-    const page = await doc.getPage(1)
     const ops = await page.getOperatorList()
     let total = 0
     let suspect = 0
     for (let i = 0; i < ops.fnArray.length; i += 1) {
-      if (ops.fnArray[i] !== pdfjsLib.OPS.showText) continue
+      const fn = ops.fnArray[i]
+      // showText 与 showSpacedText 都会落地字形
+      if (fn !== pdfjsLib.OPS.showText && fn !== pdfjsLib.OPS.showSpacedText) continue
       const glyphs = ops.argsArray[i][0] as Array<{ fontChar?: string; unicode?: string }>
       for (const glyph of glyphs ?? []) {
         if (!glyph?.fontChar) continue
@@ -266,11 +337,29 @@ export async function detectFontMappingIssue(doc: PdfDocument): Promise<boolean>
         total += 1
         if (isPrivateUseCode(code)) continue
         const unicode = glyph.unicode?.codePointAt(0) ?? null
-        if (unicode !== null && unicode !== code) suspect += 1
+        // 拿不到 Unicode 的字形同样只能按 CID 画出来，一样算可疑
+        if (unicode === null || unicode !== code) suspect += 1
       }
     }
-    if (total < 8) return false
-    return suspect / total >= 0.1
+    return { total, suspect }
+  } finally {
+    page.cleanup()
+  }
+}
+
+export async function detectFontMappingIssue(doc: PdfDocument): Promise<boolean> {
+  try {
+    let total = 0
+    let suspect = 0
+    for (const pageNo of samplePageNumbers(doc.numPages)) {
+      const stat = await countPageGlyphMapping(doc, pageNo)
+      total += stat.total
+      suspect += stat.suspect
+      // 单页就超标时提前返回，避免把整份大文件都走一遍
+      if (total >= DETECT_MIN_GLYPHS && suspect / total >= DETECT_SUSPECT_RATIO) return true
+    }
+    if (total < DETECT_MIN_GLYPHS) return false
+    return suspect / total >= DETECT_SUSPECT_RATIO
   } catch {
     return false
   }
@@ -295,7 +384,8 @@ function flattenOutline(
 ): void {
   items.forEach((item) => {
     const page = pageResolver(item.dest)
-    result.push({ title: item.title.trim(), level, chapterIndex: page })
+    // 大纲标题同样可能是「UTF-8 被当单字节解码」，能还原就还原
+    result.push({ title: repairMojibake(item.title).trim(), level, chapterIndex: page })
     const children = item.items as typeof items | undefined
     if (children?.length) flattenOutline(children, level + 1, result, pageResolver)
   })
@@ -337,8 +427,8 @@ export async function parsePdf(file: File): Promise<BookDoc> {
   const meta = await doc.getMetadata().catch(() => null)
   const info = (meta?.info ?? {}) as Record<string, unknown>
 
-  const rawTitle = String(info.Title ?? '').trim()
-  const rawAuthor = String(info.Author ?? '').trim()
+  const rawTitle = repairMojibake(String(info.Title ?? '')).trim()
+  const rawAuthor = repairMojibake(String(info.Author ?? '')).trim()
   const metaTitle = rawTitle && !looksMojibake(rawTitle) ? cleanMetaTitle(rawTitle) : ''
   const nameTitle = titleFromFilename(file.name)
   // 文件名优先：用户在磁盘上看到的是它，突然换成 PDF 里那个（往往是 Word 的旧文档属性）
