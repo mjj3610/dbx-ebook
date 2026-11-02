@@ -334,14 +334,14 @@ function onMouseUp(): void {
   requestAnimationFrame(() => {
     const root = currentShadow()
     if (!root) return
+    // readSelection 会把选中范围和浮条定位用的矩形一起算好：
+    // Shadow DOM 下 window.getSelection() 拿到的是折叠到宿主的空范围，矩形也是 0
     const result = readSelection(root)
     if (!result || !result.text.trim()) {
       emit('selection', null)
       return
     }
-    const selection = window.getSelection()
-    const rect = selection && selection.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : new DOMRect()
-    emit('selection', { ...result, rect })
+    emit('selection', result)
   })
 }
 

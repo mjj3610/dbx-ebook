@@ -258,18 +258,40 @@ export function markSpeechBlock(root: ParentNode, blockIndex: number): void {
   target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
-/** 取当前容器内的选中文本与范围 */
-export function readSelection(root: ParentNode): { text: string; start: number; end: number } | null {
-  const selection = window.getSelection()
-  // 不依赖 isCollapsed：Shadow DOM 下部分浏览器会误报折叠，统一用偏移量判定
-  if (!selection || selection.rangeCount === 0) return null
+/**
+ * 取当前落在 root 里的有效选区
+ *
+ * 正文在 Shadow DOM 里时，`window.getSelection()` 只给到**折叠到宿主元素**的范围
+ * （startContainer 是 host、矩形宽度为 0），真实选区只有 `ShadowRoot.getSelection()`
+ * （Chrome 已实现）才拿得到。PDF 的文本层在 light DOM，退回 window.getSelection 即可。
+ */
+function activeSelection(root: ParentNode): Selection | null {
+  const candidates: Array<Selection | null> = []
+  const shadow = root as ShadowRoot & { getSelection?: () => Selection | null }
+  if (typeof shadow.getSelection === 'function') {
+    candidates.push(shadow.getSelection() ?? null)
+  }
+  candidates.push(window.getSelection())
+  for (const selection of candidates) {
+    if (!selection || selection.rangeCount === 0) continue
+    const range = selection.getRangeAt(0)
+    if (root.contains(range.startContainer) && root.contains(range.endContainer)) return selection
+  }
+  return null
+}
+
+/** 取当前容器内的选中文本与范围（rect 供浮条定位，Shadow DOM 下必须用同一个选区算） */
+export function readSelection(
+  root: ParentNode,
+): { text: string; start: number; end: number; rect: DOMRect } | null {
+  const selection = activeSelection(root)
+  if (!selection) return null
   const range = selection.getRangeAt(0)
-  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
   const start = absoluteOffset(root, range.startContainer, range.startOffset)
   const end = absoluteOffset(root, range.endContainer, range.endOffset)
   if (end <= start) return null
   const { text } = collectText(root)
-  return { text: text.slice(start, end), start, end }
+  return { text: text.slice(start, end), start, end, rect: range.getBoundingClientRect() }
 }
 
 /** 段落文本列表（听书按段落朗读） */

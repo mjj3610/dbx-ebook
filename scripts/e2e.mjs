@@ -474,6 +474,73 @@ if (pdfBarVisible) {
   check('重开 PDF 后高亮仍在', pdfMarkAgain > 0, `mark=${pdfMarkAgain}`)
 }
 
+console.log('\n[6e] EPUB 选中 → 高亮 → 笔记')
+await backToShelf()
+await openBook('测试之书')
+await page.waitForTimeout(800)
+// 正文在 shadow root 里：window.getSelection() 只给折叠到宿主的空范围，
+// 必须靠 ShadowRoot.getSelection() 才拿得到真实选区，这里按真实拖选验一遍
+const flowBox = await page.evaluate(() => {
+  const root = document.querySelector('.page-host')?.shadowRoot
+  if (!root) return null
+  const target = [...root.querySelectorAll('.book p, .book li, .book div')].find((el) => {
+    const rect = el.getBoundingClientRect()
+    const text = (el.textContent ?? '').trim()
+    return rect.width > 80 && rect.height > 10 && rect.top > 90 && rect.bottom < window.innerHeight - 20 && text.length > 12
+  })
+  if (!target) return null
+  const rect = target.getBoundingClientRect()
+  return { x: rect.x, y: rect.y, w: rect.width, h: rect.height }
+})
+check('EPUB 有可拖选的段落', Boolean(flowBox), JSON.stringify(flowBox))
+
+if (flowBox) {
+  await page.mouse.move(flowBox.x + 6, flowBox.y + flowBox.h / 2)
+  await page.mouse.down()
+  await page.mouse.move(flowBox.x + flowBox.w * 0.4, flowBox.y + flowBox.h / 2, { steps: 8 })
+  await page.mouse.move(flowBox.x + flowBox.w * 0.65, flowBox.y + flowBox.h / 2, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(700)
+
+  const flowBar = await page.locator('.bar').isVisible()
+  check('EPUB 选中后浮条出现', flowBar)
+
+  if (flowBar) {
+    await page.locator('.bar .dot').first().click()
+    await page.waitForTimeout(700)
+    const flowMark = await page.evaluate(() => {
+      const root = document.querySelector('.page-host')?.shadowRoot
+      const mark = root?.querySelector('.book mark[data-note-id]')
+      if (!mark) return null
+      const style = getComputedStyle(mark)
+      return {
+        color: style.color,
+        background: style.backgroundColor,
+        text: (mark.textContent ?? '').slice(0, 20),
+      }
+    })
+    check('EPUB 高亮写入正文', Boolean(flowMark), JSON.stringify(flowMark))
+    check(
+      'EPUB 高亮背景可见',
+      Boolean(flowMark) && flowMark.background !== 'rgba(0, 0, 0, 0)' && flowMark.background !== 'transparent',
+      JSON.stringify(flowMark),
+    )
+    await page.locator('.right .icon-btn').nth(1).click()
+    await page.waitForTimeout(600)
+    check('EPUB 高亮进入笔记面板', (await page.locator('.note').count()) > 0)
+    await page.locator('.panel .icon-btn').last().click()
+    await page.waitForTimeout(400)
+    await backToShelf()
+    await openBook('测试之书')
+    await page.waitForTimeout(1200)
+    const flowAgain = await page.evaluate(() => {
+      const root = document.querySelector('.page-host')?.shadowRoot
+      return root?.querySelectorAll('.book mark[data-note-id]').length ?? 0
+    })
+    check('重开 EPUB 后高亮仍在', flowAgain > 0, `mark=${flowAgain}`)
+  }
+}
+
 console.log('\n[7] 漫画')
 await backToShelf()
 await page.locator('.card', { hasText: 'comic' }).first().click()

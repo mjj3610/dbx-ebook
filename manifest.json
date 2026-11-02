@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "com.mjj3610.ebook",
   "name": "E-book Reader",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "publisher": "mjj3610",
   "description": "Read 18 e-book formats — EPUB, PDF, TXT, MOBI, AZW3, DOCX, comics and more — with paged, double-page or scrolling layouts, text-to-speech, translation, highlights and notes.",
   "icon": "assets/plugin.svg",

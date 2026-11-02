@@ -262,6 +262,127 @@ for (const item of PDFS) {
   check('没有运行时异常', errors.length === 0, errors.slice(0, 2).join(' | '))
 }
 
+/**
+ * 文字流（EPUB / TXT）：正文在 Shadow DOM 里
+ *
+ * Chrome 下 `window.getSelection()` 只给到**折叠到宿主元素**的空范围（矩形宽度 0），
+ * 真实选区只有 `ShadowRoot.getSelection()` 才拿得到 —— 这条路径必须单独回归，
+ * 否则「PDF 修好了、EPUB 还是选不出浮条」这种半修状态不会被发现。
+ */
+async function importFlow(fixture, mime, title) {
+  console.log(`\n[${fixture}] 导入并打开`)
+  logs.length = 0
+  const bytes = [
+    ...Buffer.concat([readFileSync(resolve('fixtures', fixture)), Buffer.from(`\n% flow-${Date.now()}\n`, 'latin1')]),
+  ]
+  const name = `flow-${Date.now()}-${fixture}`
+  await frame.evaluate(
+    ({ bytes, name, mime }) => {
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([new Uint8Array(bytes)], name, { type: mime }))
+      document.querySelector('.app').dispatchEvent(
+        new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true }),
+      )
+    },
+    { bytes, name, mime },
+  )
+  await page.waitForTimeout(4500)
+
+  const onShelf = await frame.evaluate(
+    (wanted) => [...document.querySelectorAll('.card')].some((c) => (c.textContent ?? '').includes(wanted)),
+    title,
+  )
+  check('书架上有这本文字书', onShelf, title)
+  if (!onShelf) return false
+
+  await openBook(title)
+  return true
+}
+
+if (await importFlow('book.epub', 'application/epub+zip', '测试之书')) {
+  // locator 会穿透 open shadow root，boundingBox 已是主页面坐标
+  const para = frame.locator('.book p, .book li, .book div').filter({ hasText: /[\s\S]/ }).first()
+  const box = await para.boundingBox({ timeout: 8000 }).catch(() => null)
+  check('EPUB 找到可拖选段落', Boolean(box), JSON.stringify(box))
+
+  if (box) {
+    await page.mouse.move(box.x + 6, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2, { steps: 8 })
+    await page.mouse.move(box.x + box.width * 0.65, box.y + box.height / 2, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(800)
+
+    const shadowSel = await frame.evaluate(() => {
+      const root = document.querySelector('.page-host')?.shadowRoot
+      const selection = root && typeof root.getSelection === 'function' ? root.getSelection() : null
+      return {
+        text: (selection?.toString() ?? '').trim().slice(0, 24),
+        windowText: (window.getSelection()?.toString() ?? '').trim().slice(0, 24),
+      }
+    })
+    check('Shadow DOM 选区能取到文字', shadowSel.text.length > 0, JSON.stringify(shadowSel))
+
+    const flowBar = await frame.locator('.bar').isVisible().catch(() => false)
+    check('EPUB 选中后浮条出现', flowBar)
+
+    if (flowBar) {
+      await frame.locator('.bar .act').first().click()
+      await page.waitForTimeout(700)
+      const comment = `EPUB批注-${Date.now().toString(36)}`
+      await frame.locator('.note-dialog textarea').fill(comment)
+      await frame.locator('.note-dialog .btn-primary').click()
+      await page.waitForTimeout(1000)
+
+      const flowMark = await frame.evaluate(() => {
+        const root = document.querySelector('.page-host')?.shadowRoot
+        const mark = root?.querySelector('.book mark[data-note-id]')
+        if (!mark) return null
+        const style = getComputedStyle(mark)
+        return { background: style.backgroundColor, color: style.color, text: (mark.textContent ?? '').slice(0, 20) }
+      })
+      check('EPUB 高亮写入正文', Boolean(flowMark), JSON.stringify(flowMark))
+      check(
+        'EPUB 高亮背景可见且文字不透明',
+        Boolean(flowMark) &&
+          flowMark.background !== 'rgba(0, 0, 0, 0)' &&
+          !/rgba?\(0,\s*0,\s*0,\s*0\)|transparent/.test(flowMark.color),
+        JSON.stringify(flowMark),
+      )
+
+      await frame.locator('.right .icon-btn').nth(1).click()
+      await page.waitForTimeout(800)
+      const comments = await frame.evaluate(() =>
+        [...document.querySelectorAll('.note .comment')].map((node) => (node.textContent ?? '').trim()),
+      )
+      check('EPUB 批注进入笔记面板', comments.some((text) => text.includes(comment)), JSON.stringify(comments))
+      await page.screenshot({ path: `${SHOTS}/20-host-note-epub.png` })
+
+      await frame.locator('.panel .icon-btn').last().click()
+      await page.waitForTimeout(400)
+      await backToShelf()
+      await openBook('测试之书')
+      const again = await frame.evaluate(
+        () => document.querySelector('.page-host')?.shadowRoot?.querySelectorAll('.book mark[data-note-id]').length ?? 0,
+      )
+      check('重开 EPUB 后高亮仍在', again > 0, `mark=${again}`)
+
+      await frame.locator('.right .icon-btn').nth(1).click()
+      await page.waitForTimeout(600)
+      await frame.locator('.panel .note .del').first().click().catch(() => undefined)
+      await page.waitForTimeout(500)
+      await frame.locator('.dialog .btn-danger, .dialog .btn-primary').last().click().catch(() => undefined)
+      await page.waitForTimeout(400)
+      await frame.locator('.panel .icon-btn').last().click().catch(() => undefined)
+      await page.waitForTimeout(300)
+      await backToShelf()
+    }
+
+    const flowErrors = logs.filter((line) => line.startsWith('pageerror:'))
+    check('EPUB 没有运行时异常', flowErrors.length === 0, flowErrors.slice(0, 2).join(' | '))
+  }
+}
+
 await browser.close()
 console.log(failed === 0 ? '\nPASS host-note' : `\nFAILED ${failed}`)
 process.exit(failed === 0 ? 0 : 1)

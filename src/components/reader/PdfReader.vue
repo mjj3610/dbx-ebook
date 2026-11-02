@@ -417,9 +417,7 @@ function onMouseUp(): void {
       emit('selection', null)
       return
     }
-    const selection = window.getSelection()
-    const rect = selection && selection.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : new DOMRect()
-    emit('selection', { ...result, rect })
+    emit('selection', result)
   })
 }
 
