@@ -58,7 +58,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import { openPdfWithAutoCompat } from '../../core/parsers/pdf'
-import { wrapQuote, readSelection } from '../../core/render'
+import { buildMarkCss, wrapQuote, readSelection } from '../../core/render'
 import type { BookDoc, NoteRecord, ReaderSettings } from '../../core/types'
 import { t } from '../../i18n'
 import AppIcon from '../ui/AppIcon.vue'
@@ -112,6 +112,8 @@ const compatDismissed = ref(false)
 
 let observer: IntersectionObserver | null = null
 let resizeObserver: ResizeObserver | null = null
+/** 高亮样式表（挂在 light DOM，卸载时移除） */
+let markStyleEl: HTMLStyleElement | null = null
 
 /** 双页模式每页至少要有这么宽，否则退回单页 */
 const MIN_DOUBLE_PAGE_WIDTH = 320
@@ -148,6 +150,12 @@ function setPageRef(el: HTMLElement | null, index: number): void {
 
 /** 载入文档 */
 onMounted(async () => {
+  // 高亮样式挂在 light DOM 里（PDF 文本层不在 Shadow DOM），挂载时注入一次
+  markStyleEl = document.createElement('style')
+  markStyleEl.dataset.dbxMark = 'pdf'
+  markStyleEl.textContent = buildMarkCss('.text-layer', 'transparent')
+  document.head.appendChild(markStyleEl)
+
   // 先接管视口尺寸：perView 与页面宽度都依赖它，晚一步就会按 0 处理一次
   if (rootRef.value) {
     viewportWidth.value = rootRef.value.clientWidth
@@ -470,6 +478,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  markStyleEl?.remove()
+  markStyleEl = null
   observer?.disconnect()
   observer = null
   resizeObserver?.disconnect()
@@ -558,8 +568,9 @@ defineExpose({ next, prev, goToPage, markSpeech, getParagraphs })
   border-radius: 2px;
 }
 
+/* 高亮样式由 buildMarkCss('.text-layer', 'transparent') 在挂载时注入：
+   这里只保留与颜色无关的圆角，避免两处各写一套配色 */
 .text-layer :deep(mark[data-note-id]) {
-  color: transparent;
   border-radius: 2px;
 }
 

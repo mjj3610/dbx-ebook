@@ -420,6 +420,60 @@ await page.waitForTimeout(600)
 await page.locator('.panel .icon-btn').last().click()
 await page.waitForTimeout(400)
 
+console.log('\n[6d] PDF 选中 → 高亮 → 笔记')
+await backToShelf()
+await openBook('cn')
+await page.waitForTimeout(1500)
+// 在透明文本层里选中一段文字，模拟真实拖选后抬手
+const selected = await page.evaluate(() => {
+  const layer = document.querySelector('.text-layer')
+  const span = layer?.querySelector('span')
+  const textNode = span?.firstChild
+  if (!textNode || !textNode.textContent) return ''
+  const range = document.createRange()
+  range.setStart(textNode, 0)
+  range.setEnd(textNode, Math.min(5, textNode.textContent.length))
+  const selection = window.getSelection()
+  selection.removeAllRanges()
+  selection.addRange(range)
+  document.querySelector('.pages-viewport')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  return range.toString()
+})
+await page.waitForTimeout(700)
+check('PDF 文本层能取到选区', selected.length > 0, JSON.stringify(selected))
+const pdfBarVisible = await page.locator('.bar').isVisible()
+check('PDF 选中后浮条出现', pdfBarVisible)
+
+if (pdfBarVisible) {
+  await page.locator('.bar .dot').first().click()
+  await page.waitForTimeout(800)
+  const pdfMark = await page.evaluate(() => {
+    const mark = document.querySelector('.text-layer mark[data-note-id]')
+    if (!mark) return null
+    const style = getComputedStyle(mark)
+    return { color: style.color, background: style.backgroundColor }
+  })
+  check('PDF 高亮写入文本层', Boolean(pdfMark))
+  // 文本层文字是透明的（真字在 canvas 上），所以背景必须由样式给出，否则等于没高亮
+  check(
+    'PDF 高亮背景可见且文字保持透明',
+    Boolean(pdfMark) && pdfMark.background !== 'rgba(0, 0, 0, 0)' && pdfMark.background !== 'transparent' && /rgba?\(0, 0, 0, 0\)|transparent/.test(pdfMark.color),
+    JSON.stringify(pdfMark),
+  )
+  await page.locator('.right .icon-btn').nth(1).click()
+  await page.waitForTimeout(600)
+  const pdfNotes = await page.locator('.note').count()
+  check('PDF 高亮进入笔记面板', pdfNotes > 0, `notes=${pdfNotes}`)
+  await page.locator('.panel .icon-btn').last().click()
+  await page.waitForTimeout(400)
+  // 重新打开这本书，高亮要从笔记里重绘出来（wrapQuote 依赖同一套取文本逻辑）
+  await backToShelf()
+  await openBook('cn')
+  await page.waitForTimeout(1800)
+  const pdfMarkAgain = await page.evaluate(() => document.querySelectorAll('.text-layer mark[data-note-id]').length)
+  check('重开 PDF 后高亮仍在', pdfMarkAgain > 0, `mark=${pdfMarkAgain}`)
+}
+
 console.log('\n[7] 漫画')
 await backToShelf()
 await page.locator('.card', { hasText: 'comic' }).first().click()

@@ -19,16 +19,28 @@ export const READER_VARS = {
   link: '--rd-link',
 } as const
 
+/**
+ * 生成高亮标记的样式规则
+ *
+ * prefix 用来限定作用域：
+ * - 文字流正文：`.book`（在 Shadow DOM 里，文字与背景都由我们自己画）
+ * - PDF 文本层：文本层文字是**透明**的，真正的字形在下面的 canvas 上，
+ *   因此文字颜色固定 transparent，只让背景色露出来
+ */
+export function buildMarkCss(prefix: string, textColor = 'inherit'): string {
+  return Object.entries(NOTE_COLORS)
+    .map(
+      ([key, value]) =>
+        `${prefix} mark[data-color="${key}"]{background:${value.bg};border-bottom:2px solid ${value.border};color:${textColor};padding:0 1px;border-radius:2px;}`,
+    )
+    .join('\n')
+}
+
 /** 生成注入 Shadow DOM 的样式表 */
 export function buildBookCss(settings: ReaderSettings, bookCssText = ''): string {
   const theme = THEMES[settings.theme]
   const fontFamily = FONT_FAMILIES[settings.fontFamily].css
-  const marks = Object.entries(NOTE_COLORS)
-    .map(
-      ([key, value]) =>
-        `.book mark[data-color="${key}"]{background:${value.bg};border-bottom:2px solid ${value.border};color:inherit;padding:0 1px;border-radius:2px;}`,
-    )
-    .join('\n')
+  const marks = buildMarkCss('.book')
 
   return `
 :host{all:initial;}
@@ -128,7 +140,14 @@ interface TextBasis {
 
 /** 采集 Shadow 内的全部文本节点（以渲染顺序拼接） */
 export function collectText(root: ParentNode): TextBasis {
-  const container = root.querySelector('.book')
+  // 文字流阅读器传进来的是 ShadowRoot，正文在它下面的 .book 里；
+  // PDF 的文本层**自己**就带 .book 类，而 querySelector 不会匹配自身，
+  // 所以必须单独判断一次，否则 PDF 选区永远拿到空文本（选中不出弹层、老笔记也画不出来）
+  const self = root as Partial<Element>
+  const container: ParentNode | null =
+    typeof self.classList?.contains === 'function' && self.classList.contains('book')
+      ? (root as ParentNode)
+      : root.querySelector('.book')
   if (!container) return { nodes: [], text: '' }
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) =>

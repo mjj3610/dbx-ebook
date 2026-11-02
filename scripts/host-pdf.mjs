@@ -65,7 +65,6 @@ const frame = page.frames().find((f) => f !== page.mainFrame())
 check('工作台 iframe 已创建', Boolean(frame))
 if (!frame) {
   await browser.close()
-  rmSync(TEST_ROOT, { recursive: true, force: true })
   process.exit(1)
 }
 
